@@ -24,6 +24,11 @@ class ApiConfig {
       ? dotenv.env['MICROSOFT_SCOPES']!.trim()
       : 'openid profile email offline_access';
 
+  static String get livekitUrl =>
+      dotenv.env['LIVEKIT_URL']?.trim().isNotEmpty == true
+      ? dotenv.env['LIVEKIT_URL']!.trim()
+      : '';
+
   static const String apiPrefix = '/api';
 
   static String get apiBaseUrl {

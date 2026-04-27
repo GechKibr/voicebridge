@@ -28,6 +28,7 @@ class _HelpdeskTabPageState extends State<HelpdeskTabPage> {
   bool _isMutatingSession = false;
   bool _isJoiningCall = false;
   bool _isSidebarVisible = true;
+  bool _showSessionList = false;
 
   String _query = '';
   String _statusFilter = 'all';
@@ -486,8 +487,8 @@ class _HelpdeskTabPageState extends State<HelpdeskTabPage> {
 
   Widget _statsCard(String label, int value, Color bg, Color fg) {
     return Container(
-      constraints: const BoxConstraints(minHeight: 74),
-      padding: const EdgeInsets.all(12),
+      constraints: const BoxConstraints(minHeight: 58),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(12),
@@ -500,7 +501,7 @@ class _HelpdeskTabPageState extends State<HelpdeskTabPage> {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 11,
               color: fg,
               fontWeight: FontWeight.w600,
             ),
@@ -509,7 +510,7 @@ class _HelpdeskTabPageState extends State<HelpdeskTabPage> {
           Text(
             '$value',
             style: TextStyle(
-              fontSize: 20,
+              fontSize: 18,
               color: fg,
               fontWeight: FontWeight.w800,
             ),
@@ -553,162 +554,249 @@ class _HelpdeskTabPageState extends State<HelpdeskTabPage> {
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final itemWidth = constraints.maxWidth >= 360
-                    ? (constraints.maxWidth - 8) / 2
-                    : constraints.maxWidth;
-
-                return Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    SizedBox(
-                      width: itemWidth,
-                      child: _statsCard(
-                        'Total',
-                        _sessions.length,
-                        const Color(0xFFE2E8F0),
-                        const Color(0xFF1E293B),
-                      ),
-                    ),
-                    SizedBox(
-                      width: itemWidth,
-                      child: _statsCard(
-                        'Active',
-                        active,
-                        const Color(0xFFDCFCE7),
-                        const Color(0xFF166534),
-                      ),
-                    ),
-                    SizedBox(
-                      width: itemWidth,
-                      child: _statsCard(
-                        'Pending',
-                        pending,
-                        const Color(0xFFFEF3C7),
-                        const Color(0xFF92400E),
-                      ),
-                    ),
-                    SizedBox(
-                      width: itemWidth,
-                      child: _statsCard(
-                        'Ended',
-                        ended,
-                        const Color(0xFFF1F5F9),
-                        const Color(0xFF475569),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-            child: TextField(
-              decoration: const InputDecoration(
-                hintText: 'Search sessions',
-                prefixIcon: Icon(Icons.search),
-              ),
-              onChanged: (value) => setState(() => _query = value),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: Row(
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _statusFilter,
-                    decoration: const InputDecoration(labelText: 'Status'),
-                    items: const [
-                      DropdownMenuItem(value: 'all', child: Text('All')),
-                      DropdownMenuItem(
-                        value: 'pending',
-                        child: Text('Pending'),
-                      ),
-                      DropdownMenuItem(value: 'active', child: Text('Active')),
-                      DropdownMenuItem(value: 'ended', child: Text('Ended')),
-                      DropdownMenuItem(
-                        value: 'cancelled',
-                        child: Text('Cancelled'),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      if (value == null) return;
-                      setState(() => _statusFilter = value);
-                    },
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final columns = constraints.maxWidth >= 360 ? 4 : 2;
+                    final itemWidth =
+                        (constraints.maxWidth - (columns - 1) * 8) / columns;
+
+                    return Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        SizedBox(
+                          width: itemWidth,
+                          child: _statsCard(
+                            'Total',
+                            _sessions.length,
+                            const Color(0xFFE2E8F0),
+                            const Color(0xFF1E293B),
+                          ),
+                        ),
+                        SizedBox(
+                          width: itemWidth,
+                          child: _statsCard(
+                            'Active',
+                            active,
+                            const Color(0xFFDCFCE7),
+                            const Color(0xFF166534),
+                          ),
+                        ),
+                        SizedBox(
+                          width: itemWidth,
+                          child: _statsCard(
+                            'Pending',
+                            pending,
+                            const Color(0xFFFEF3C7),
+                            const Color(0xFF92400E),
+                          ),
+                        ),
+                        SizedBox(
+                          width: itemWidth,
+                          child: _statsCard(
+                            'Ended',
+                            ended,
+                            const Color(0xFFF1F5F9),
+                            const Color(0xFF475569),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  decoration: const InputDecoration(
+                    hintText: 'Search sessions',
+                    prefixIcon: Icon(Icons.search),
+                  ),
+                  onChanged: (value) => setState(() => _query = value),
+                ),
+                const SizedBox(height: 8),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isNarrow = constraints.maxWidth < 320;
+
+                    return isNarrow
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              DropdownButtonFormField<String>(
+                                initialValue: _statusFilter,
+                                decoration: const InputDecoration(
+                                  labelText: 'Status',
+                                ),
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'all',
+                                    child: Text('All'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'pending',
+                                    child: Text('Pending'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'active',
+                                    child: Text('Active'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'ended',
+                                    child: Text('Ended'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'cancelled',
+                                    child: Text('Cancelled'),
+                                  ),
+                                ],
+                                onChanged: (value) {
+                                  if (value == null) return;
+                                  setState(() => _statusFilter = value);
+                                },
+                              ),
+                              const SizedBox(height: 8),
+                              FilledButton.icon(
+                                onPressed: _showCreateSessionDialog,
+                                icon: const Icon(Icons.add),
+                                label: const Text('New'),
+                              ),
+                            ],
+                          )
+                        : Row(
+                            children: [
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  initialValue: _statusFilter,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Status',
+                                  ),
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: 'all',
+                                      child: Text('All'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'pending',
+                                      child: Text('Pending'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'active',
+                                      child: Text('Active'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'ended',
+                                      child: Text('Ended'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'cancelled',
+                                      child: Text('Cancelled'),
+                                    ),
+                                  ],
+                                  onChanged: (value) {
+                                    if (value == null) return;
+                                    setState(() => _statusFilter = value);
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              FilledButton.icon(
+                                onPressed: _showCreateSessionDialog,
+                                icon: const Icon(Icons.add),
+                                label: const Text('New'),
+                              ),
+                            ],
+                          );
+                  },
+                ),
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: () =>
+                        setState(() => _showSessionList = !_showSessionList),
+                    icon: Icon(
+                      _showSessionList ? Icons.expand_less : Icons.expand_more,
+                    ),
+                    label: Text(
+                      _showSessionList ? 'Hide sessions' : 'Show sessions',
+                    ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                FilledButton.icon(
-                  onPressed: _showCreateSessionDialog,
-                  icon: const Icon(Icons.add),
-                  label: const Text('New'),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          Expanded(
-            child: _loadingSessions
-                ? const Center(child: CircularProgressIndicator())
-                : sessions.isEmpty
-                ? const Center(child: Text('No sessions found.'))
-                : ListView.separated(
-                    itemCount: sessions.length,
-                    separatorBuilder: (_, _) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      final session = sessions[index];
-                      final selected = _selectedSession?.id == session.id;
-                      final statusColor = _statusColor(context, session.status);
-                      final participantNames = session.participants
-                          .take(3)
-                          .map((item) => item.fullName)
-                          .where((name) => name.trim().isNotEmpty)
-                          .join(', ');
-
-                      return ListTile(
-                        selected: selected,
-                        selectedTileColor: Theme.of(
+                if (_showSessionList) ...[
+                  const Divider(height: 1),
+                  if (_loadingSessions)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 16),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (sessions.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 16),
+                      child: Center(child: Text('No sessions found.')),
+                    )
+                  else
+                    ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: sessions.length,
+                      separatorBuilder: (_, _) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final session = sessions[index];
+                        final selected = _selectedSession?.id == session.id;
+                        final statusColor = _statusColor(
                           context,
-                        ).colorScheme.primary.withValues(alpha: 0.08),
-                        title: Text(
-                          session.displayTitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        subtitle: Text(
-                          '${_kindLabel(session.kind)}\n${participantNames.isEmpty ? 'No participants' : participantNames}',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        trailing: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
+                          session.status,
+                        );
+                        final participantNames = session.participants
+                            .take(3)
+                            .map((item) => item.fullName)
+                            .where((name) => name.trim().isNotEmpty)
+                            .join(', ');
+
+                        return ListTile(
+                          selected: selected,
+                          selectedTileColor: Theme.of(
+                            context,
+                          ).colorScheme.primary.withValues(alpha: 0.08),
+                          title: Text(
+                            session.displayTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
                           ),
-                          decoration: BoxDecoration(
-                            color: statusColor.withValues(alpha: 0.16),
-                            borderRadius: BorderRadius.circular(999),
+                          subtitle: Text(
+                            '${_kindLabel(session.kind)}\n${participantNames.isEmpty ? 'No participants' : participantNames}',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          child: Text(
-                            _statusLabel(session.status),
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: statusColor,
+                          trailing: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: statusColor.withValues(alpha: 0.16),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              _statusLabel(session.status),
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: statusColor,
+                              ),
                             ),
                           ),
-                        ),
-                        onTap: () => _selectSession(session),
-                      );
-                    },
-                  ),
+                          onTap: () => _selectSession(session),
+                        );
+                      },
+                    ),
+                ],
+              ],
+            ),
           ),
         ],
       ),

@@ -164,6 +164,26 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
     }
   }
 
+  int _bottomNavIndexForTab(int tabIndex) {
+    if (tabIndex == StudentDashboardTab.announcements.index) return 1;
+    if (tabIndex == StudentDashboardTab.profile.index) return 2;
+    return 0;
+  }
+
+  void _setBottomNavIndex(int index) {
+    switch (index) {
+      case 1:
+        _setTab(StudentDashboardTab.announcements.index);
+        return;
+      case 2:
+        _setTab(StudentDashboardTab.profile.index);
+        return;
+      case 0:
+      default:
+        _setTab(StudentDashboardTab.home.index);
+    }
+  }
+
   String _tabTitle(int index) {
     switch (index) {
       case 1:
@@ -571,27 +591,6 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
         label: 'Helpdesk',
         accent: Color(0xFF6B7280),
       ),
-      const _NavEntry(
-        tabIndex: 8,
-        icon: Icons.person_outline,
-        selectedIcon: Icons.person,
-        label: 'Profile',
-        accent: Color(0xFF7C3AED),
-      ),
-      const _NavEntry(
-        tabIndex: 7,
-        icon: Icons.campaign_outlined,
-        selectedIcon: Icons.campaign,
-        label: 'Announcements',
-        accent: Color(0xFF06B6D4),
-      ),
-      const _NavEntry(
-        tabIndex: 0,
-        icon: Icons.home_outlined,
-        selectedIcon: Icons.home,
-        label: 'Home',
-        accent: Color(0xFF10B981),
-      ),
     ];
 
     return Container(
@@ -660,29 +659,11 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
                 ),
                 SizedBox(height: compact ? 10 : 16),
                 if (!compact) ...[
-                  const Text(
-                    'CMFTS',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 0.4,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Student System',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.86),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
                   Text(
                     profileName,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 18,
+                      fontSize: 16,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -872,6 +853,41 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _notificationAction(StudentController controller) {
+    final unreadCount = controller.notifications.where((n) => !n.isRead).length;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        IconButton(
+          tooltip: 'Notifications',
+          onPressed: () => _setTab(StudentDashboardTab.notifications.index),
+          icon: const Icon(Icons.notifications_outlined),
+        ),
+        if (unreadCount > 0)
+          Positioned(
+            top: 4,
+            right: 6,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.error,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                unreadCount > 99 ? '99+' : '$unreadCount',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -3498,6 +3514,7 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
       value: _studentController,
       child: Consumer<StudentController>(
         builder: (context, controller, _) {
+          final isWide = MediaQuery.sizeOf(context).width >= 1000;
           final pages = [
             _homeTab(controller),
             const HelpdeskTabPage(),
@@ -3513,12 +3530,13 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
           final selectedIndex = _currentTab.clamp(0, pages.length - 1).toInt();
 
           return Scaffold(
-            drawer: MediaQuery.sizeOf(context).width >= 1000
+            drawer: isWide
                 ? null
                 : Drawer(child: SafeArea(child: _navigationPanel(controller))),
             appBar: AppBar(
               title: Text(_tabTitle(selectedIndex)),
               actions: [
+                _notificationAction(controller),
                 IconButton(
                   onPressed: controller.isLoading
                       ? null
@@ -3585,6 +3603,29 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
                         );
                       },
                     ),
+                  ),
+            bottomNavigationBar: isWide
+                ? null
+                : NavigationBar(
+                    selectedIndex: _bottomNavIndexForTab(selectedIndex),
+                    onDestinationSelected: _setBottomNavIndex,
+                    destinations: const [
+                      NavigationDestination(
+                        icon: Icon(Icons.home_outlined),
+                        selectedIcon: Icon(Icons.home),
+                        label: 'Home',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.campaign_outlined),
+                        selectedIcon: Icon(Icons.campaign),
+                        label: 'Announcements',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.person_outline),
+                        selectedIcon: Icon(Icons.person),
+                        label: 'Profile',
+                      ),
+                    ],
                   ),
           );
         },

@@ -1,3 +1,5 @@
+import '../../../../core/config/api_config.dart';
+
 class HelpdeskKinds {
   static const String audioCall = 'audio_call';
   static const String videoCall = 'video_call';
@@ -210,8 +212,10 @@ class HelpdeskLivekitToken {
   }
 
   String get connectUrl {
-    final parsed = Uri.tryParse(url.trim());
-    if (parsed == null) return url.trim();
+    final override = ApiConfig.livekitUrl;
+    final base = override.isNotEmpty ? override : url.trim();
+    final parsed = Uri.tryParse(base);
+    if (parsed == null) return base;
 
     if (parsed.scheme == 'http' || parsed.scheme == 'https') {
       return parsed
@@ -223,5 +227,7 @@ class HelpdeskLivekitToken {
   }
 
   bool get isValid =>
-      url.trim().isNotEmpty && token.trim().isNotEmpty && roomName.isNotEmpty;
+      (ApiConfig.livekitUrl.isNotEmpty || url.trim().isNotEmpty) &&
+      token.trim().isNotEmpty &&
+      roomName.isNotEmpty;
 }
