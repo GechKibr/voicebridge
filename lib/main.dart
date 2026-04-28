@@ -9,7 +9,6 @@ import 'features/auth/presentation/controllers/auth_controller.dart';
 import 'features/auth/presentation/pages/forgot_password_page.dart';
 import 'features/auth/presentation/pages/login_page.dart';
 import 'features/auth/presentation/pages/register_page.dart';
-import 'features/auth/presentation/pages/reset_password_page.dart';
 import 'features/home/presentation/pages/home_page.dart';
 import 'features/home/presentation/pages/student_dashboard_page.dart';
 import 'features/public/presentation/pages/landing_page.dart';
@@ -26,7 +25,7 @@ Widget _resolveUnauthenticatedPage() {
     case 'forgot-password':
       return const ForgotPasswordPage();
     case 'reset-password':
-      return ResetPasswordPage(token: Uri.base.queryParameters['token']);
+      return const ForgotPasswordPage();
     case 'landing':
       return const LandingPage();
     default:

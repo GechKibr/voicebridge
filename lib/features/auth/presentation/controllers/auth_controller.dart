@@ -166,30 +166,56 @@ class AuthController with ChangeNotifier {
     }
   }
 
-  Future<bool> requestPasswordReset(String identifier) async {
+  Future<PasswordResetRequestResult?> requestPasswordReset(
+    String identifier,
+  ) async {
     _setLoading(true);
     _setError(null);
 
     try {
-      await _authService.requestPasswordReset(identifier);
+      final result = await _authService.requestPasswordReset(identifier);
       _setLoading(false);
-      return true;
+      return result;
     } catch (e) {
       _setError(e.toString());
       _setLoading(false);
-      return false;
+      return null;
     }
   }
 
-  Future<bool> resetPassword({
-    required String token,
+  Future<PasswordResetOtpVerification?> verifyPasswordResetOtp({
+    required String identifier,
+    required String otp,
+  }) async {
+    _setLoading(true);
+    _setError(null);
+
+    try {
+      final result = await _authService.verifyPasswordResetOtp(
+        identifier: identifier,
+        otp: otp,
+      );
+      _setLoading(false);
+      return result;
+    } catch (e) {
+      _setError(e.toString());
+      _setLoading(false);
+      return null;
+    }
+  }
+
+  Future<bool> resetPasswordWithOtp({
+    required String resetToken,
     required String password,
   }) async {
     _setLoading(true);
     _setError(null);
 
     try {
-      await _authService.resetPassword(token: token, password: password);
+      await _authService.resetPasswordWithOtp(
+        resetToken: resetToken,
+        password: password,
+      );
       _setLoading(false);
       return true;
     } catch (e) {

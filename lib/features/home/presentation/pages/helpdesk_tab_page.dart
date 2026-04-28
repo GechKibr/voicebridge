@@ -1032,6 +1032,24 @@ class _HelpdeskTabPageState extends State<HelpdeskTabPage> {
     );
   }
 
+  void _handleSidebarDrag(BuildContext context, DragEndDetails details) {
+    if (_isWideLayout(context)) return;
+
+    final velocity = details.primaryVelocity ?? 0;
+    if (velocity > 300) {
+      if (!_isSidebarVisible) {
+        setState(() => _isSidebarVisible = true);
+      }
+      return;
+    }
+
+    if (velocity < -300) {
+      if (_isSidebarVisible) {
+        setState(() => _isSidebarVisible = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isWide = _isWideLayout(context);
@@ -1064,7 +1082,18 @@ class _HelpdeskTabPageState extends State<HelpdeskTabPage> {
                 )
               : Stack(
                   children: [
-                    Positioned.fill(child: _buildChatPane(context)),
+                    Positioned.fill(
+                      child: GestureDetector(
+                        onTap: () {
+                          if (_isSidebarVisible) {
+                            setState(() => _isSidebarVisible = false);
+                          }
+                        },
+                        onHorizontalDragEnd: (details) =>
+                            _handleSidebarDrag(context, details),
+                        child: _buildChatPane(context),
+                      ),
+                    ),
                     if (_isSidebarVisible)
                       Positioned.fill(
                         child: Row(

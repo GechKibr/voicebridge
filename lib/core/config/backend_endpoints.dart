@@ -9,6 +9,10 @@ class BackendEndpoints {
   static const String accountsPasswordResetRequest =
       '/accounts/request-password-reset/';
   static const String accountsPasswordReset = '/accounts/reset-password/';
+  static const String accountsPasswordResetVerifyOtp =
+      '/accounts/verify-password-reset-otp/';
+  static const String accountsPasswordResetOtp =
+      '/accounts/reset-password-otp/';
 
   static const String campuses = '/campuses/';
   static const String colleges = '/colleges/';

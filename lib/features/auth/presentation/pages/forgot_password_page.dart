@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../controllers/auth_controller.dart';
 import '../widgets/custom_text_field.dart';
 import 'login_page.dart';
+import 'password_reset_otp_page.dart';
 
 class ForgotPasswordPage extends StatefulWidget {
   const ForgotPasswordPage({super.key});
@@ -28,25 +29,33 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     }
 
     final controller = context.read<AuthController>();
-    final success = await controller.requestPasswordReset(
-      _identifierController.text.trim(),
-    );
+    final identifier = _identifierController.text.trim();
+    final result = await controller.requestPasswordReset(identifier);
 
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          success
-              ? 'Password reset link sent if the account exists.'
-              : controller.errorMessage ?? 'Unable to request password reset.',
+          result?.message ??
+              controller.errorMessage ??
+              'Unable to request password reset.',
         ),
-        backgroundColor: success ? Colors.green : Colors.redAccent,
+        backgroundColor: result != null ? Colors.green : Colors.redAccent,
       ),
     );
 
-    if (success) {
+    if (result != null) {
       _identifierController.clear();
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PasswordResetOtpPage(
+            identifier: identifier,
+            maskedEmail: result.maskedEmail,
+          ),
+        ),
+      );
     }
   }
 
@@ -68,7 +77,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Enter your email address or username and we will send a reset link if the account exists.',
+                  'Enter your email address or username and we will send an OTP if the account exists.',
                   style: TextStyle(color: Colors.grey, height: 1.4),
                 ),
                 const SizedBox(height: 20),
@@ -98,7 +107,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                                 color: Colors.white,
                               ),
                             )
-                          : const Text('Send Reset Link'),
+                          : const Text('Send OTP'),
                     );
                   },
                 ),

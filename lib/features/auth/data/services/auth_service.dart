@@ -17,6 +17,23 @@ class MicrosoftBackendAuthResult {
   });
 }
 
+class PasswordResetRequestResult {
+  final String message;
+  final String? maskedEmail;
+
+  const PasswordResetRequestResult({required this.message, this.maskedEmail});
+}
+
+class PasswordResetOtpVerification {
+  final String resetToken;
+  final String? expiresAt;
+
+  const PasswordResetOtpVerification({
+    required this.resetToken,
+    this.expiresAt,
+  });
+}
+
 class AuthService {
   final _storage = const FlutterSecureStorage();
 
@@ -305,7 +322,9 @@ class AuthService {
     throw Exception('Invalid user profile response');
   }
 
-  Future<void> requestPasswordReset(String identifier) async {
+  Future<PasswordResetRequestResult> requestPasswordReset(
+    String identifier,
+  ) async {
     _assertSecureBackend();
 
     final response = await http.post(
@@ -317,6 +336,61 @@ class AuthService {
     if (response.statusCode != 200 && response.statusCode != 201) {
       final payload = _decodeError(response.body);
       throw Exception(payload ?? 'Failed to request password reset.');
+    }
+
+    final payload = _decodeJsonMap(response.body);
+    return PasswordResetRequestResult(
+      message:
+          payload['message']?.toString() ??
+          'If an account exists for this identifier, an OTP has been sent.',
+      maskedEmail: payload['masked_email']?.toString(),
+    );
+  }
+
+  Future<PasswordResetOtpVerification> verifyPasswordResetOtp({
+    required String identifier,
+    required String otp,
+  }) async {
+    _assertSecureBackend();
+
+    final response = await http.post(
+      ApiConfig.uri(BackendEndpoints.accountsPasswordResetVerifyOtp),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'identifier': identifier, 'otp': otp}),
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      final payload = _decodeError(response.body);
+      throw Exception(payload ?? 'Failed to verify OTP.');
+    }
+
+    final payload = _decodeJsonMap(response.body);
+    final resetToken = payload['reset_token']?.toString() ?? '';
+    if (resetToken.isEmpty) {
+      throw Exception('Reset token missing. Please request a new OTP.');
+    }
+
+    return PasswordResetOtpVerification(
+      resetToken: resetToken,
+      expiresAt: payload['reset_token_expires_at']?.toString(),
+    );
+  }
+
+  Future<void> resetPasswordWithOtp({
+    required String resetToken,
+    required String password,
+  }) async {
+    _assertSecureBackend();
+
+    final response = await http.post(
+      ApiConfig.uri(BackendEndpoints.accountsPasswordResetOtp),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'reset_token': resetToken, 'password': password}),
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      final payload = _decodeError(response.body);
+      throw Exception(payload ?? 'Failed to reset password.');
     }
   }
 
