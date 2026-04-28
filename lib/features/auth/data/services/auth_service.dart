@@ -356,7 +356,7 @@ class AuthService {
     final response = await http.post(
       ApiConfig.uri(BackendEndpoints.accountsPasswordResetVerifyOtp),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'identifier': identifier, 'otp': otp}),
+      body: jsonEncode({'email': identifier, 'otp': otp}),
     );
 
     if (response.statusCode != 200 && response.statusCode != 201) {

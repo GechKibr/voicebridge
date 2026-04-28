@@ -1,0 +1,17 @@
+{
+  "authorities": [
+    {
+      "type": "AAD",
+      "audience": {
+        "type": "AzureADMyOrg",
+        "tenant_id": "8d03c987-425f-469c-91be-1e5f9506b93a"
+      }
+    }
+  ],
+  "redirect_uri": "msal8e6d31db-a2b6-4220-b826-6cea91f5508d://auth",
+  "account_mode": "MULTIPLE",
+  "logging": {
+    "pii_enabled": false,
+    "log_level": "INFO"
+  }
+}
