@@ -45,6 +45,10 @@ class StudentController with ChangeNotifier {
   List<StudentAppointment> _appointments = [];
   List<StudentAppointment> get appointments => _appointments;
 
+  List<AppointmentAvailabilityItem> _appointmentAvailabilities = [];
+  List<AppointmentAvailabilityItem> get appointmentAvailabilities =>
+      _appointmentAvailabilities;
+
   List<ServiceAssessmentForm> _serviceAssessments = [];
   List<ServiceAssessmentForm> get serviceAssessments => _serviceAssessments;
 
@@ -86,6 +90,7 @@ class StudentController with ChangeNotifier {
       _officers = [];
       _complaints = [];
       _appointments = [];
+      _appointmentAvailabilities = [];
       _profile = null;
       _notifications = [];
       _serviceAssessments = [];
@@ -101,6 +106,7 @@ class StudentController with ChangeNotifier {
       _runSafely(() => _service.fetchOfficers()),
       _runSafely(() => _service.fetchMyComplaints()),
       _runSafely(() => _service.fetchAppointments()),
+      _runSafely(() => _service.fetchAppointmentAvailabilities()),
       _runSafely(() => _service.fetchProfile()),
       _runSafely(() => _service.fetchNotifications()),
       _runSafely(() => _service.fetchAnnouncements()),
@@ -113,11 +119,13 @@ class StudentController with ChangeNotifier {
     _officers = results[2] as List<SelectableOfficer>? ?? [];
     _complaints = results[3] as List<StudentComplaint>? ?? [];
     _appointments = results[4] as List<StudentAppointment>? ?? [];
-    _profile = results[5] as StudentProfile?;
-    _notifications = results[6] as List<UserNotification>? ?? [];
-    _announcements = results[7] as List<PublicAnnouncement>? ?? [];
-    _serviceAssessments = results[8] as List<ServiceAssessmentForm>? ?? [];
-    _feedbackTemplates = results[9] as List<FeedbackTemplateModel>? ?? [];
+    _appointmentAvailabilities =
+        results[5] as List<AppointmentAvailabilityItem>? ?? [];
+    _profile = results[6] as StudentProfile?;
+    _notifications = results[7] as List<UserNotification>? ?? [];
+    _announcements = results[8] as List<PublicAnnouncement>? ?? [];
+    _serviceAssessments = results[9] as List<ServiceAssessmentForm>? ?? [];
+    _feedbackTemplates = results[10] as List<FeedbackTemplateModel>? ?? [];
 
     _isLoading = false;
     notifyListeners();
@@ -135,6 +143,16 @@ class StudentController with ChangeNotifier {
     final updated = await _runSafely(() => _service.fetchAppointments());
     if (updated != null) {
       _appointments = updated;
+      notifyListeners();
+    }
+  }
+
+  Future<void> refreshAppointmentAvailabilities() async {
+    final updated = await _runSafely(
+      () => _service.fetchAppointmentAvailabilities(),
+    );
+    if (updated != null) {
+      _appointmentAvailabilities = updated;
       notifyListeners();
     }
   }
@@ -396,9 +414,13 @@ class StudentController with ChangeNotifier {
   }
 
   Future<bool> requestAppointment({
-    required String title,
+    required int availabilitySlotId,
     required String description,
-    required DateTime scheduledFor,
+    int? complaintId,
+    String? issueType,
+    DateTime? preferredDate,
+    String? location,
+    String? note,
   }) async {
     _isRequestingAppointment = true;
     _error = null;
@@ -406,11 +428,16 @@ class StudentController with ChangeNotifier {
 
     try {
       await _service.requestAppointment(
-        title: title,
+        availabilitySlotId: availabilitySlotId,
         description: description,
-        scheduledFor: scheduledFor,
+        complaintId: complaintId,
+        issueType: issueType,
+        preferredDate: preferredDate,
+        location: location,
+        note: note,
       );
       await refreshAppointments();
+      await refreshAppointmentAvailabilities();
       return true;
     } catch (e) {
       _error = e.toString();

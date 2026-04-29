@@ -44,10 +44,16 @@ class MicrosoftAuthService {
   List<String> _redirectUriCandidates(String configured) {
     final normalized = configured.trim();
     if (normalized.isEmpty) {
-      return const [];
+      return const ['com.voicebridge://callback'];
     }
 
     final candidates = <String>[normalized];
+
+    const fallbackRedirectUri = 'com.voicebridge://callback';
+    if (!candidates.contains(fallbackRedirectUri)) {
+      candidates.add(fallbackRedirectUri);
+    }
+
     final parsed = Uri.tryParse(normalized);
     if (parsed == null || parsed.scheme.isEmpty) {
       return candidates;

@@ -84,7 +84,7 @@ class AuthController with ChangeNotifier {
         identity.microsoftAccessToken,
       );
 
-      if (backendResult.userExists) {
+      if (!backendResult.isNew && backendResult.userExists) {
         _user = backendResult.authResponse?.user;
         _setLoading(false);
         return const MicrosoftSignInResult(

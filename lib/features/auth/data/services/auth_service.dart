@@ -7,11 +7,13 @@ import '../models/auth_model.dart';
 
 class MicrosoftBackendAuthResult {
   final bool userExists;
+  final bool isNew;
   final AuthResponseModel? authResponse;
   final Map<String, dynamic> payload;
 
   const MicrosoftBackendAuthResult({
     required this.userExists,
+    required this.isNew,
     required this.authResponse,
     required this.payload,
   });
@@ -126,6 +128,12 @@ class AuthService {
     final body = _decodeJsonMap(response.body);
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
+      final isNewUser =
+          _isTruthy(body['is_new']) ||
+          _isTruthy(body['new_user']) ||
+          _isTruthy(body['requires_registration']) ||
+          _isTruthy(body['need_registration']);
+
       final hasTokens =
           (body['access']?.toString().trim().isNotEmpty ?? false) &&
           (body['refresh']?.toString().trim().isNotEmpty ?? false);
@@ -135,11 +143,12 @@ class AuthService {
         payload: body,
       );
 
-      if (hasTokens && !requiresRegistration) {
+      if (hasTokens && !requiresRegistration && !isNewUser) {
         final authResponse = AuthResponseModel.fromJson(body);
         await _persistTokens(authResponse.access, authResponse.refresh);
         return MicrosoftBackendAuthResult(
           userExists: true,
+          isNew: false,
           authResponse: authResponse,
           payload: body,
         );
@@ -147,6 +156,7 @@ class AuthService {
 
       return MicrosoftBackendAuthResult(
         userExists: false,
+        isNew: isNewUser || requiresRegistration,
         authResponse: null,
         payload: body,
       );
@@ -158,6 +168,7 @@ class AuthService {
     )) {
       return MicrosoftBackendAuthResult(
         userExists: false,
+        isNew: true,
         authResponse: null,
         payload: body,
       );
@@ -167,6 +178,15 @@ class AuthService {
     throw Exception(
       payload ?? 'Microsoft authentication failed: ${response.statusCode}',
     );
+  }
+
+  bool _isTruthy(dynamic value) {
+    if (value is bool) {
+      return value;
+    }
+
+    final normalized = value?.toString().toLowerCase().trim() ?? '';
+    return normalized == 'true' || normalized == '1' || normalized == 'yes';
   }
 
   Map<String, dynamic> _decodeJsonMap(String body) {

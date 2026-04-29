@@ -117,13 +117,11 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
   final _complaintTitleFocus = FocusNode();
   final _complaintDescriptionFocus = FocusNode();
   final _complaintAttachmentFocus = FocusNode();
-  final _feedbackController = TextEditingController();
 
   String? _selectedCategoryId;
   List<int> _selectedCcOfficerIds = [];
   bool _anonymousComplaint = false;
   int _submitComplaintStep = 0;
-  int _quickFeedbackRating = 5;
 
   FeedbackTemplateModel? _selectedFeedbackTemplate;
   final Map<String, dynamic> _feedbackAnswers = <String, dynamic>{};
@@ -148,7 +146,6 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
     _complaintTitleFocus.dispose();
     _complaintDescriptionFocus.dispose();
     _complaintAttachmentFocus.dispose();
-    _feedbackController.dispose();
 
     super.dispose();
   }
@@ -982,29 +979,24 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
       if (!_validateComplaintDetails(redirectToDetailsStep: true)) {
         return;
       }
-
       final categories = _uniqueCategories(controller.categories);
       final title = _complaintTitleController.text.trim();
       final description = _complaintDescriptionController.text.trim();
       final attachmentPath = _complaintAttachmentController.text.trim();
-
       final selectedCategory = categories
           .where((category) => category.id == _selectedCategoryId)
           .cast<ComplaintCategory?>()
           .firstWhere((category) => category != null, orElse: () => null);
-
       if (selectedCategory == null) {
         _showSnackBar('Please select a category before submitting.');
         return;
       }
-
       if (selectedCategory.submitCategoryId.trim().isEmpty) {
         _showSnackBar(
           'This category is missing a backend category_id and cannot be submitted.',
         );
         return;
       }
-
       final success = await controller.submitComplaint(
         title: title,
         description: description,
@@ -1016,9 +1008,7 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
         anonymous: _anonymousComplaint,
         attachmentPath: attachmentPath.isEmpty ? null : attachmentPath,
       );
-
       if (!mounted) return;
-
       if (success) {
         _complaintTitleController.clear();
         _complaintDescriptionController.clear();
@@ -2318,43 +2308,403 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
     await controller.refreshComplaints();
   }
 
+  String _appointmentSlotSummary(AppointmentAvailabilityItem slot) {
+    final parts = <String>[];
+    if (slot.officerName.isNotEmpty) {
+      parts.add(slot.officerName);
+    }
+    if (slot.availableDate.isNotEmpty) {
+      parts.add(slot.availableDate);
+    }
+    if (slot.startTime.isNotEmpty && slot.endTime.isNotEmpty) {
+      parts.add('${slot.startTime} - ${slot.endTime}');
+    }
+    return parts.join(' • ');
+  }
+
+  String _appointmentSlotDetails(AppointmentAvailabilityItem slot) {
+    final details = <String>[];
+    if (slot.availableDate.isNotEmpty) {
+      details.add('Date: ${slot.availableDate}');
+    }
+    if (slot.startTime.isNotEmpty && slot.endTime.isNotEmpty) {
+      details.add('Time: ${slot.startTime} - ${slot.endTime}');
+    }
+    if (slot.source.isNotEmpty) {
+      details.add('Source: ${slot.source}');
+    }
+    details.add(slot.isFree ? 'Status: Free' : 'Status: Booked');
+    return details.join('\n');
+  }
+
+  Future<void> _openAppointmentRequestDialog(
+    StudentController controller, {
+    AppointmentAvailabilityItem? preselectedSlot,
+  }) async {
+    final availableSlots = controller.appointmentAvailabilities
+        .where((slot) => slot.isFree)
+        .toList(growable: false);
+
+    if (availableSlots.isEmpty) {
+      _showSnackBar(
+        'No free appointment slots are available right now.',
+        backgroundColor: Colors.red,
+      );
+      return;
+    }
+
+    final formKey = GlobalKey<FormState>();
+    final descriptionController = TextEditingController();
+    final locationController = TextEditingController();
+    final noteController = TextEditingController();
+    final preferredDateController = TextEditingController();
+
+    final issueTypeOptions = <Map<String, String>>[
+      {'value': 'complaint', 'label': 'Complaint'},
+      {'value': 'support', 'label': 'Support'},
+      {'value': 'inquiry', 'label': 'Inquiry'},
+      {'value': 'service_request', 'label': 'Service Request'},
+      {'value': 'other', 'label': 'Other'},
+    ];
+
+    final messenger = ScaffoldMessenger.of(context);
+    AppointmentAvailabilityItem selectedSlot =
+        preselectedSlot != null && availableSlots.contains(preselectedSlot)
+        ? preselectedSlot
+        : availableSlots.first;
+    String selectedIssueType = 'other';
+    bool submitting = false;
+
+    Future<void> submit(
+      BuildContext dialogContext,
+      StateSetter setDialogState,
+    ) async {
+      if (!formKey.currentState!.validate()) {
+        return;
+      }
+
+      setDialogState(() => submitting = true);
+      final navigator = Navigator.of(dialogContext);
+
+      final preferredDateText = preferredDateController.text.trim();
+      final preferredDate = DateTime.tryParse(
+        preferredDateText.isNotEmpty
+            ? preferredDateText
+            : selectedSlot.availableDate,
+      );
+
+      final success = await controller.requestAppointment(
+        availabilitySlotId: selectedSlot.id,
+        description: descriptionController.text.trim(),
+        issueType: selectedIssueType,
+        preferredDate: preferredDate,
+        location: locationController.text.trim().isEmpty
+            ? null
+            : locationController.text.trim(),
+        note: noteController.text.trim().isEmpty
+            ? null
+            : noteController.text.trim(),
+      );
+
+      if (!mounted) return;
+
+      if (success) {
+        navigator.pop(true);
+        return;
+      }
+
+      setDialogState(() => submitting = false);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(controller.error ?? 'Unable to request appointment.'),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+
+    final success = await showDialog<bool>(
+      context: context,
+      barrierDismissible: !controller.isRequestingAppointment,
+      builder: (dialogContext) {
+        preferredDateController.text = selectedSlot.availableDate;
+
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            return AlertDialog(
+              title: const Text('Request Appointment'),
+              content: SingleChildScrollView(
+                child: Form(
+                  key: formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      DropdownButtonFormField<AppointmentAvailabilityItem>(
+                        initialValue: selectedSlot,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Available slot',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: availableSlots
+                            .map(
+                              (slot) =>
+                                  DropdownMenuItem<AppointmentAvailabilityItem>(
+                                    value: slot,
+                                    child: Text(_appointmentSlotSummary(slot)),
+                                  ),
+                            )
+                            .toList(growable: false),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setDialogState(() {
+                            selectedSlot = value;
+                            preferredDateController.text = value.availableDate;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          _appointmentSlotDetails(selectedSlot),
+                          style: TextStyle(color: Colors.grey.shade700),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: selectedIssueType,
+                        decoration: const InputDecoration(
+                          labelText: 'Issue type',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: issueTypeOptions
+                            .map(
+                              (item) => DropdownMenuItem<String>(
+                                value: item['value'],
+                                child: Text(
+                                  item['label'] ?? item['value'] ?? '',
+                                ),
+                              ),
+                            )
+                            .toList(growable: false),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setDialogState(() => selectedIssueType = value);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: preferredDateController,
+                        decoration: const InputDecoration(
+                          labelText: 'Preferred date',
+                          border: OutlineInputBorder(),
+                          helperText: 'Defaults to the selected slot date.',
+                        ),
+                        readOnly: true,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: descriptionController,
+                        decoration: const InputDecoration(
+                          labelText: 'Description',
+                          border: OutlineInputBorder(),
+                        ),
+                        minLines: 3,
+                        maxLines: 5,
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
+                            return 'Please enter a description';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: locationController,
+                        decoration: const InputDecoration(
+                          labelText: 'Location',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: noteController,
+                        decoration: const InputDecoration(
+                          labelText: 'Note',
+                          border: OutlineInputBorder(),
+                        ),
+                        minLines: 2,
+                        maxLines: 4,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: submitting
+                      ? null
+                      : () => Navigator.pop(dialogContext, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: submitting
+                      ? null
+                      : () => submit(dialogContext, setDialogState),
+                  child: submitting
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Submit Request'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    descriptionController.dispose();
+    locationController.dispose();
+    noteController.dispose();
+    preferredDateController.dispose();
+
+    if (success == true && mounted) {
+      _showSnackBar(
+        'Appointment request submitted successfully.',
+        backgroundColor: Colors.green,
+      );
+    }
+  }
+
   Widget _appointmentsTab(StudentController controller) {
     return RefreshIndicator(
-      onRefresh: controller.refreshAppointments,
+      onRefresh: () async {
+        await Future.wait([
+          controller.refreshAppointments(),
+          controller.refreshAppointmentAvailabilities(),
+        ]);
+      },
       child: ListView(
         padding: const EdgeInsets.all(16),
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
           const Text(
-            'Officer schedules',
+            'My Appointments',
             style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 10),
+          FilledButton.icon(
+            onPressed:
+                controller.appointmentAvailabilities.any((slot) => slot.isFree)
+                ? () => _openAppointmentRequestDialog(controller)
+                : null,
+            icon: const Icon(Icons.add_task_outlined),
+            label: const Text('Request Appointment'),
           ),
           const SizedBox(height: 8),
           if (controller.appointments.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 18),
-              child: Text('No schedules have been set yet.'),
+              child: Text('No appointments have been scheduled yet.'),
             )
           else
             ...controller.appointments.map(
               (appointment) => Card(
                 child: ListTile(
                   leading: const CircleAvatar(
-                    child: Icon(Icons.event_available_outlined),
+                    child: Icon(Icons.event_note_outlined),
                   ),
-                  title: Text(appointment.title),
+                  title: Text(
+                    appointment.complaintTitle.isNotEmpty
+                        ? appointment.complaintTitle
+                        : appointment.title,
+                  ),
                   subtitle: Text(
                     [
+                      appointment.issueTypeDisplay.isNotEmpty
+                          ? 'Type: ${appointment.issueTypeDisplay}'
+                          : '',
                       appointment.description,
-                      appointment.scheduledFor,
+                      appointment.preferredDate.isNotEmpty
+                          ? 'Preferred date: ${appointment.preferredDate}'
+                          : '',
+                      appointment.scheduledFor.isNotEmpty
+                          ? 'Scheduled: ${appointment.scheduledFor}'
+                          : '',
                       appointment.officerName.isEmpty
                           ? ''
                           : 'Officer: ${appointment.officerName}',
                       appointment.location,
+                      appointment.note.isEmpty
+                          ? ''
+                          : 'Note: ${appointment.note}',
+                      appointment.rejectionReason.isEmpty
+                          ? ''
+                          : 'Reason: ${appointment.rejectionReason}',
                     ].where((part) => part.trim().isNotEmpty).join('\n'),
                   ),
                   isThreeLine: true,
-                  trailing: _statusChip(appointment.status),
+                  trailing: _statusChip(
+                    appointment.statusDisplay.isNotEmpty
+                        ? appointment.statusDisplay
+                        : appointment.status,
+                  ),
+                ),
+              ),
+            ),
+          const SizedBox(height: 24),
+          const Text(
+            'Available Slots',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          if (controller.appointmentAvailabilities.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 18),
+              child: Text(
+                'No available appointment slots were returned by the backend.',
+              ),
+            )
+          else
+            ...controller.appointmentAvailabilities.map(
+              (slot) => Card(
+                child: ListTile(
+                  leading: const CircleAvatar(
+                    child: Icon(Icons.schedule_outlined),
+                  ),
+                  title: Text(
+                    slot.officerName.isNotEmpty
+                        ? slot.officerName
+                        : 'Available slot',
+                  ),
+                  subtitle: Text(
+                    [
+                      slot.availableDate,
+                      slot.startTime.isNotEmpty && slot.endTime.isNotEmpty
+                          ? '${slot.startTime} - ${slot.endTime}'
+                          : '',
+                      slot.source.isNotEmpty ? 'Source: ${slot.source}' : '',
+                      slot.isFree ? 'Free' : 'Booked',
+                    ].where((part) => part.trim().isNotEmpty).join('\n'),
+                  ),
+                  isThreeLine: true,
+                  trailing: slot.isFree
+                      ? FilledButton.tonalIcon(
+                          onPressed: () => _openAppointmentRequestDialog(
+                            controller,
+                            preselectedSlot: slot,
+                          ),
+                          icon: const Icon(Icons.event_available_outlined),
+                          label: const Text('Request'),
+                        )
+                      : const Icon(
+                          Icons.block_outlined,
+                          color: Colors.redAccent,
+                        ),
                 ),
               ),
             ),
@@ -2441,93 +2791,6 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
                   ),
                 );
               }),
-            const SizedBox(height: 8),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Quick feedback',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _feedbackController,
-                      maxLines: 4,
-                      decoration: const InputDecoration(
-                        labelText: 'Share quick feedback',
-                        border: OutlineInputBorder(),
-                        alignLabelWithHint: true,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text('Rating: $_quickFeedbackRating/5'),
-                        ),
-                        Expanded(
-                          flex: 2,
-                          child: Slider(
-                            min: 1,
-                            max: 5,
-                            divisions: 4,
-                            value: _quickFeedbackRating.toDouble(),
-                            label: '$_quickFeedbackRating',
-                            onChanged: (value) {
-                              setState(
-                                () => _quickFeedbackRating = value.round(),
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                    FilledButton.icon(
-                      onPressed: controller.isSubmittingFeedback
-                          ? null
-                          : () async {
-                              final message = _feedbackController.text.trim();
-                              if (message.isEmpty) {
-                                _showSnackBar('Please write your feedback.');
-                                return;
-                              }
-
-                              final success = await controller.submitFeedback(
-                                message: message,
-                                rating: _quickFeedbackRating,
-                              );
-
-                              if (!mounted) return;
-                              if (success) {
-                                _feedbackController.clear();
-                                setState(() => _quickFeedbackRating = 5);
-                                _showSnackBar(
-                                  'Feedback submitted. Thank you!',
-                                  backgroundColor: Colors.green,
-                                );
-                              } else {
-                                _showSnackBar(
-                                  controller.error ??
-                                      'Failed to submit feedback.',
-                                );
-                              }
-                            },
-                      icon: controller.isSubmittingFeedback
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.send_outlined),
-                      label: const Text('Send quick feedback'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
           ] else ...[
             Row(
               children: [

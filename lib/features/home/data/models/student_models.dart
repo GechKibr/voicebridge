@@ -367,8 +367,15 @@ class StudentAppointment {
   final String description;
   final String scheduledFor;
   final String status;
+  final String statusDisplay;
   final String officerName;
   final String location;
+  final String complaintTitle;
+  final String issueType;
+  final String issueTypeDisplay;
+  final String note;
+  final String rejectionReason;
+  final String preferredDate;
 
   StudentAppointment({
     required this.id,
@@ -376,8 +383,15 @@ class StudentAppointment {
     required this.description,
     required this.scheduledFor,
     required this.status,
+    required this.statusDisplay,
     required this.officerName,
     required this.location,
+    required this.complaintTitle,
+    required this.issueType,
+    required this.issueTypeDisplay,
+    required this.note,
+    required this.rejectionReason,
+    required this.preferredDate,
   });
 
   factory StudentAppointment.fromJson(Map<String, dynamic> json) {
@@ -397,16 +411,84 @@ class StudentAppointment {
       id: json['id'] is int
           ? json['id'] as int
           : int.tryParse('${json['id'] ?? 0}') ?? 0,
-      title: (json['title'] ?? json['subject'] ?? 'Appointment').toString(),
-      description: (json['description'] ?? '').toString(),
-      scheduledFor: (json['scheduled_for'] ?? json['date_time'] ?? '')
-          .toString(),
+      title:
+          (json['complaint_title'] ??
+                  json['title'] ??
+                  json['subject'] ??
+                  json['issue_type_display'] ??
+                  json['issue_type'] ??
+                  'Appointment')
+              .toString(),
+      description: (json['description'] ?? json['note'] ?? '').toString(),
+      scheduledFor:
+          (json['scheduled_at'] ??
+                  json['scheduled_for'] ??
+                  json['date_time'] ??
+                  json['preferred_date'] ??
+                  '')
+              .toString(),
       status: (json['status'] ?? 'pending').toString(),
+      statusDisplay: (json['status_display'] ?? json['status'] ?? 'pending')
+          .toString(),
       officerName: readName(officer).isNotEmpty
           ? readName(officer)
           : (json['officer_name'] ?? json['assigned_officer_name'] ?? '')
                 .toString(),
       location: (json['location'] ?? json['venue'] ?? '').toString(),
+      complaintTitle: (json['complaint_title'] ?? '').toString(),
+      issueType: (json['issue_type'] ?? '').toString(),
+      issueTypeDisplay: (json['issue_type_display'] ?? json['issue_type'] ?? '')
+          .toString(),
+      note: (json['note'] ?? '').toString(),
+      rejectionReason: (json['rejection_reason'] ?? '').toString(),
+      preferredDate: (json['preferred_date'] ?? '').toString(),
+    );
+  }
+}
+
+class AppointmentAvailabilityItem {
+  final int id;
+  final String officerName;
+  final String availableDate;
+  final String startTime;
+  final String endTime;
+  final String source;
+  final bool isFree;
+
+  AppointmentAvailabilityItem({
+    required this.id,
+    required this.officerName,
+    required this.availableDate,
+    required this.startTime,
+    required this.endTime,
+    required this.source,
+    required this.isFree,
+  });
+
+  factory AppointmentAvailabilityItem.fromJson(Map<String, dynamic> json) {
+    String readName(dynamic value) {
+      if (value is Map<String, dynamic>) {
+        return (value['full_name'] ?? value['name'] ?? value['title'] ?? '')
+            .toString()
+            .trim();
+      }
+      return value?.toString().trim() ?? '';
+    }
+
+    final officer = json['officer'];
+
+    return AppointmentAvailabilityItem(
+      id: json['id'] is int
+          ? json['id'] as int
+          : int.tryParse('${json['id'] ?? 0}') ?? 0,
+      officerName: readName(officer).isNotEmpty
+          ? readName(officer)
+          : (json['officer_name'] ?? '').toString(),
+      availableDate: (json['available_date'] ?? '').toString(),
+      startTime: (json['start_time'] ?? '').toString(),
+      endTime: (json['end_time'] ?? '').toString(),
+      source: (json['source'] ?? '').toString(),
+      isFree: json['is_free'] == true,
     );
   }
 }

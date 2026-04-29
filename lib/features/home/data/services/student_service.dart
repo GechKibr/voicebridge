@@ -399,7 +399,7 @@ class StudentService {
 
   Future<List<StudentAppointment>> fetchAppointments() async {
     final response = await http.get(
-      ApiConfig.uri('${BackendEndpoints.appointments}?mine=true'),
+      ApiConfig.uri(BackendEndpoints.appointments),
       headers: await _authHeaders(),
     );
 
@@ -413,18 +413,59 @@ class StudentService {
         .toList(growable: false);
   }
 
+  Future<List<AppointmentAvailabilityItem>> fetchAppointmentAvailabilities({
+    DateTime? preferredDate,
+    int? officerId,
+  }) async {
+    final queryParameters = <String, String>{};
+    if (preferredDate != null) {
+      queryParameters['preferred_date'] = preferredDate
+          .toIso8601String()
+          .split('T')
+          .first;
+    }
+    if (officerId != null) {
+      queryParameters['officer_id'] = officerId.toString();
+    }
+
+    final uri = ApiConfig.uri(
+      BackendEndpoints.appointmentAvailabilitiesAvailable,
+    ).replace(queryParameters: queryParameters);
+
+    final response = await http.get(uri, headers: await _authHeaders());
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to load appointment slots: ${response.statusCode}',
+      );
+    }
+
+    return _decodeListResponse(response.body)
+        .whereType<Map<String, dynamic>>()
+        .map(AppointmentAvailabilityItem.fromJson)
+        .toList(growable: false);
+  }
+
   Future<void> requestAppointment({
-    required String title,
+    required int availabilitySlotId,
     required String description,
-    required DateTime scheduledFor,
+    int? complaintId,
+    String? issueType,
+    DateTime? preferredDate,
+    String? location,
+    String? note,
   }) async {
     final response = await http.post(
       ApiConfig.uri(BackendEndpoints.appointments),
       headers: await _authHeaders(),
       body: jsonEncode({
-        'title': title,
+        'complaint': complaintId,
+        'availability_slot_id': availabilitySlotId,
+        'issue_type': issueType ?? 'other',
         'description': description,
-        'scheduled_for': scheduledFor.toIso8601String(),
+        'preferred_date': preferredDate?.toIso8601String().split('T').first,
+        'location': location ?? '',
+        'note': note ?? '',
       }),
     );
 

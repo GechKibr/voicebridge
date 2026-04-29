@@ -32,6 +32,12 @@ class BackendEndpoints {
   static const String notifications = '/notifications/';
   static const String announcements = '/announcements/';
   static const String appointments = '/appointments/';
+  static const String appointmentAvailabilities =
+      '/appointment-availabilities/';
+  static const String appointmentAvailabilitiesAvailable =
+      '/appointment-availabilities/available/';
+  static const String appointmentAvailabilitiesFreeSlots =
+      '/appointment-availabilities/free-slots/';
   static const String feedbackTemplates = '/feedback/templates/';
   static const String feedbackResponses = '/feedback/responses/';
   static const String maintenance = '/system/maintenance/';
