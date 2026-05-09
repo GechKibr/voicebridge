@@ -92,6 +92,9 @@ class CategoryResolverOption {
   final String levelName;
   final int officerId;
   final String officerName;
+  final String? campusName;
+  final String? collegeName;
+  final String? departmentName;
   final bool isActive;
 
   CategoryResolverOption({
@@ -102,6 +105,9 @@ class CategoryResolverOption {
     required this.levelName,
     required this.officerId,
     required this.officerName,
+    this.campusName,
+    this.collegeName,
+    this.departmentName,
     required this.isActive,
   });
 
@@ -119,6 +125,9 @@ class CategoryResolverOption {
       levelName: (json['level_name'] ?? '').toString(),
       officerId: readInt(json['officer']),
       officerName: (json['officer_name'] ?? '').toString(),
+      campusName: json['campus_name']?.toString(),
+      collegeName: json['college_name']?.toString(),
+      departmentName: json['department_name']?.toString(),
       isActive: json['active'] == true,
     );
   }
@@ -577,7 +586,7 @@ class StudentProfile {
     return int.tryParse('${value ?? ''}');
   }
 
-  String get studentId => (studentProfile?['student_id'] ?? '').toString();
+  // String get studentId => (studentProfile?['student_id'] ?? '').toString();
   String get campusId => (studentProfile?['campus_id'] ?? '').toString();
   int? get yearOfStudy => _readInt(studentProfile?['year_of_study']);
   int? get studentTypeId => _readInt(studentProfile?['student_type']);

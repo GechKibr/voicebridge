@@ -1,4 +1,162 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.voicebrige">
+
+    <!-- ========================================================= -->
+    <!-- Permissions -->
+    <!-- ========================================================= -->
+
+    <!-- Internet access -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Network state -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Audio -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!-- Camera -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- Optional for Bluetooth audio devices -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- ========================================================= -->
+    <!-- Application -->
+    <!-- ========================================================= -->
+
+    <application
+        android:name="${applicationName}"
+        android:label="voicebridge"
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="true"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config">
+
+        <!-- ===================================================== -->
+        <!-- Flutter Main Activity -->
+        <!-- ===================================================== -->
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/LaunchTheme"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="
+                orientation|
+                keyboardHidden|
+                keyboard|
+                screenSize|
+                smallestScreenSize|
+                locale|
+                layoutDirection|
+                fontScale|
+                screenLayout|
+                density|
+                uiMode">
+
+            <!-- Flutter normal theme -->
+            <meta-data
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme" />
+
+            <!-- App launcher -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+        </activity>
+
+        <!-- ===================================================== -->
+        <!-- Microsoft OAuth Redirect Receiver -->
+        <!-- flutter_appauth callback -->
+        <!-- ===================================================== -->
+
+        <activity
+            android:name="net.openid.appauth.RedirectUriReceiverActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:noHistory="true">
+
+            <intent-filter android:label="MicrosoftAuth">
+
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <!--
+                    MUST EXACTLY MATCH Azure Portal Redirect URI
+
+                    Azure Redirect URI:
+                    msauth://com.example.voicebrige/97o5GjGRMursH0mpMaTa279I3ug%3D
+
+                    Android automatically decodes %3D -> =
+                -->
+
+                <data
+                    android:scheme="msauth"
+                    android:host="com.example.voicebrige"
+                    android:path="/97o5GjGRMursH0mpMaTa279I3ug=" />
+
+            </intent-filter>
+
+        </activity>
+
+        <!-- ===================================================== -->
+        <!-- Flutter Embedding -->
+        <!-- ===================================================== -->
+
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+
+    </application>
+
+    <!-- ========================================================= -->
+    <!-- Queries -->
+    <!-- Required for Android 11+ package visibility -->
+    <!-- ========================================================= -->
+
+    <queries>
+
+        <!-- Text processing -->
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT" />
+
+            <data android:mimeType="text/plain" />
+        </intent>
+
+        <!-- Browser access for OAuth login -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+
+            <category android:name="android.intent.category.BROWSABLE" />
+
+            <data android:scheme="https" />
+        </intent>
+
+        <!-- Custom tabs support -->
+        <intent>
+            <action android:name=
+                "android.support.customtabs.action.CustomTabsService" />
+        </intent>
+
+    </queries>
+
+</manifest>
+
+
+
+
+
+<!-- <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.CAMERA" />
@@ -15,12 +173,12 @@
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize"> -->
             <!-- Specifies an Android theme to apply to this Activity as soon as
                  the Android process has started. This theme is visible to the user
                  while the Flutter UI initializes. After that, this theme continues
                  to determine the Window background behind the Flutter UI. -->
-            <meta-data
+            <!-- <meta-data
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
@@ -52,22 +210,26 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="com.voicebridge" android:host="callback" />
             </intent-filter>
-        </activity>
+        </activity> -->
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
-        <meta-data
+        <!-- <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-    </application>
+    </application> -->
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
          https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
 
          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
-    <queries>
+    <!-- <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
     </queries>
-</manifest>
+</manifest> -->
+
+
+
+

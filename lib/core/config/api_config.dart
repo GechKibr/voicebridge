@@ -17,7 +17,7 @@ class ApiConfig {
   static String get microsoftRedirectUri =>
       dotenv.env['MICROSOFT_REDIRECT_URI']?.trim().isNotEmpty == true
       ? dotenv.env['MICROSOFT_REDIRECT_URI']!.trim()
-      : 'com.voicebridge://callback';
+      : 'msauth://com.example.voicebrige/97o5GjGRMursH0mpMaTa279I3ug%3D';
 
   static String get microsoftScopes =>
       dotenv.env['MICROSOFT_SCOPES']?.trim().isNotEmpty == true

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../../../core/config/api_config.dart';
@@ -52,11 +53,14 @@ class AuthService {
     _assertSecureBackend();
 
     try {
-      final response = await http.post(
-        ApiConfig.uri(BackendEndpoints.accountsLogin),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'identifier': email, 'password': password}),
-      );
+      final response = await http
+          .post(
+            ApiConfig.uri(BackendEndpoints.accountsLogin),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'identifier': email, 'password': password}),
+          )
+          .timeout(const Duration(seconds: 30));
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final authResponse = AuthResponseModel.fromJson(data);
@@ -69,6 +73,8 @@ class AuthService {
       } else {
         throw Exception('Server error: ${response.statusCode}');
       }
+    } on TimeoutException {
+      throw Exception('Login request timed out. Backend is not responding.');
     } catch (e) {
       throw Exception('Network failure: $e');
     }
@@ -86,32 +92,40 @@ class AuthService {
   }) async {
     _assertSecureBackend();
 
-    final response = await http.post(
-      ApiConfig.uri(BackendEndpoints.accountsRegister),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'email': email,
-        'gmail_account': gmailAccount,
-        'username': username,
-        'first_name': firstName,
-        'last_name': lastName,
-        'phone': phone,
-        'password': password,
-        'confirm_password': confirmPassword,
-      }),
-    );
+    try {
+      final response = await http
+          .post(
+            ApiConfig.uri(BackendEndpoints.accountsRegister),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'email': email,
+              'gmail_account': gmailAccount,
+              'username': username,
+              'first_name': firstName,
+              'last_name': lastName,
+              'phone': phone,
+              'password': password,
+              'confirm_password': confirmPassword,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
 
-    if (response.statusCode == 200 || response.statusCode == 201) {
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final authResponse = AuthResponseModel.fromJson(data);
-      if (authResponse.access.isNotEmpty && authResponse.refresh.isNotEmpty) {
-        await _persistTokens(authResponse.access, authResponse.refresh);
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final authResponse = AuthResponseModel.fromJson(data);
+        if (authResponse.access.isNotEmpty && authResponse.refresh.isNotEmpty) {
+          await _persistTokens(authResponse.access, authResponse.refresh);
+        }
+        return authResponse;
       }
-      return authResponse;
-    }
 
-    final payload = _decodeError(response.body);
-    throw Exception(payload ?? 'Registration failed: ${response.statusCode}');
+      final payload = _decodeError(response.body);
+      throw Exception(payload ?? 'Registration failed: ${response.statusCode}');
+    } on TimeoutException {
+      throw Exception(
+        'Registration request timed out. Backend is not responding.',
+      );
+    }
   }
 
   Future<MicrosoftBackendAuthResult> authenticateMicrosoftAccessToken(
@@ -119,65 +133,78 @@ class AuthService {
   ) async {
     _assertSecureBackend();
 
-    final response = await http.post(
-      ApiConfig.uri(BackendEndpoints.authMicrosoftMobile),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'access_token': accessToken}),
-    );
+    try {
+      final response = await http
+          .post(
+            ApiConfig.uri(BackendEndpoints.authMicrosoftMobile),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'access_token': accessToken}),
+          )
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () => throw TimeoutException(
+              'Microsoft authentication backend request timed out after 30 seconds. Backend: ${ApiConfig.backendUrl}',
+            ),
+          );
 
-    final body = _decodeJsonMap(response.body);
+      final body = _decodeJsonMap(response.body);
 
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-      final isNewUser =
-          _isTruthy(body['is_new']) ||
-          _isTruthy(body['new_user']) ||
-          _isTruthy(body['requires_registration']) ||
-          _isTruthy(body['need_registration']);
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final isNewUser =
+            _isTruthy(body['is_new']) ||
+            _isTruthy(body['new_user']) ||
+            _isTruthy(body['requires_registration']) ||
+            _isTruthy(body['need_registration']);
 
-      final hasTokens =
-          (body['access']?.toString().trim().isNotEmpty ?? false) &&
-          (body['refresh']?.toString().trim().isNotEmpty ?? false);
+        final hasTokens =
+            (body['access']?.toString().trim().isNotEmpty ?? false) &&
+            (body['refresh']?.toString().trim().isNotEmpty ?? false);
 
-      final requiresRegistration = _isMicrosoftRegistrationResponse(
-        statusCode: response.statusCode,
-        payload: body,
-      );
+        final requiresRegistration = _isMicrosoftRegistrationResponse(
+          statusCode: response.statusCode,
+          payload: body,
+        );
 
-      if (hasTokens && !requiresRegistration && !isNewUser) {
-        final authResponse = AuthResponseModel.fromJson(body);
-        await _persistTokens(authResponse.access, authResponse.refresh);
+        if (hasTokens && !requiresRegistration && !isNewUser) {
+          final authResponse = AuthResponseModel.fromJson(body);
+          await _persistTokens(authResponse.access, authResponse.refresh);
+          return MicrosoftBackendAuthResult(
+            userExists: true,
+            isNew: false,
+            authResponse: authResponse,
+            payload: body,
+          );
+        }
+
         return MicrosoftBackendAuthResult(
-          userExists: true,
-          isNew: false,
-          authResponse: authResponse,
+          userExists: false,
+          isNew: isNewUser || requiresRegistration,
+          authResponse: null,
           payload: body,
         );
       }
 
-      return MicrosoftBackendAuthResult(
-        userExists: false,
-        isNew: isNewUser || requiresRegistration,
-        authResponse: null,
+      if (_isMicrosoftRegistrationResponse(
+        statusCode: response.statusCode,
         payload: body,
-      );
-    }
+      )) {
+        return MicrosoftBackendAuthResult(
+          userExists: false,
+          isNew: true,
+          authResponse: null,
+          payload: body,
+        );
+      }
 
-    if (_isMicrosoftRegistrationResponse(
-      statusCode: response.statusCode,
-      payload: body,
-    )) {
-      return MicrosoftBackendAuthResult(
-        userExists: false,
-        isNew: true,
-        authResponse: null,
-        payload: body,
+      final payload = _decodeError(response.body);
+      throw Exception(
+        payload ?? 'Microsoft authentication failed: ${response.statusCode}',
       );
+    } on TimeoutException catch (e) {
+      throw Exception('Backend timeout: ${e.message}');
+    } catch (e) {
+      throw Exception('Microsoft backend error: $e');
     }
-
-    final payload = _decodeError(response.body);
-    throw Exception(
-      payload ?? 'Microsoft authentication failed: ${response.statusCode}',
-    );
   }
 
   bool _isTruthy(dynamic value) {

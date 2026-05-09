@@ -10,7 +10,7 @@ import '../../../auth/presentation/pages/login_page.dart';
 import '../../data/models/student_models.dart';
 import '../controllers/student_controller.dart';
 import 'complaint_details_page.dart';
-import 'helpdesk_tab_page.dart';
+import 'helpdesk_sessions_page.dart';
 
 enum StudentDashboardTab {
   home,
@@ -95,7 +95,8 @@ class StudentDashboardPage extends StatefulWidget {
   State<StudentDashboardPage> createState() => _StudentDashboardPageState();
 }
 
-class _StudentDashboardPageState extends State<StudentDashboardPage> {
+class _StudentDashboardPageState extends State<StudentDashboardPage>
+    with TickerProviderStateMixin {
   static const double _space1 = 8;
   static const double _space2 = 16;
   static const double _space3 = 24;
@@ -112,16 +113,25 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
 
   final _complaintTitleController = TextEditingController();
   final _complaintDescriptionController = TextEditingController();
-  final _complaintAttachmentController = TextEditingController();
   final _complaintFormKey = GlobalKey<FormState>();
   final _complaintTitleFocus = FocusNode();
   final _complaintDescriptionFocus = FocusNode();
-  final _complaintAttachmentFocus = FocusNode();
 
   String? _selectedCategoryId;
   List<int> _selectedCcOfficerIds = [];
   bool _anonymousComplaint = false;
   int _submitComplaintStep = 0;
+  String _categorySearchText = '';
+  bool _categoryRegexEnabled = false;
+  String _ccOfficerSearchText = '';
+  bool _ccRegexEnabled = false;
+  List<PlatformFile> _complaintAttachments = [];
+  Map<String, String> _resolverFilters = {
+    'campus': '',
+    'college': '',
+    'department': '',
+  };
+  List<String> _selectedResolverIds = [];
 
   FeedbackTemplateModel? _selectedFeedbackTemplate;
   final Map<String, dynamic> _feedbackAnswers = <String, dynamic>{};
@@ -129,11 +139,88 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
   String _complaintStatusFilter = 'all';
   String _complaintCategoryFilter = 'all';
 
+  late final PageController _pageController;
+  late final AnimationController _fadeAnimationController;
+  late final AnimationController _stepHeaderAnimationController;
+  late final Animation<double> _fadeAnimation;
+  late final Animation<double> _stepHeaderAnimation;
+
+  // Appointment request state
+  bool _isRequestingAppointment = false;
+  int _appointmentRequestStep = 0;
+  AppointmentAvailabilityItem? _selectedAppointmentSlot;
+  String _selectedIssueType = 'other';
+  final TextEditingController _appointmentDescriptionController =
+      TextEditingController();
+  // final TextEditingController _appointmentLocationController =
+  //     TextEditingController();
+  final TextEditingController _appointmentNoteController =
+      TextEditingController();
+  final TextEditingController _appointmentPreferredDateController =
+      TextEditingController();
+  final GlobalKey<FormState> _appointmentFormKey = GlobalKey<FormState>();
+
+  late final PageController _appointmentPageController;
+  late final AnimationController _appointmentFadeAnimationController;
+  late final AnimationController _appointmentStepHeaderAnimationController;
+  late final Animation<double> _appointmentFadeAnimation;
+  late final Animation<double> _appointmentStepHeaderAnimation;
+
   @override
   void initState() {
     super.initState();
     _currentTab = widget.initialTab.index;
     _studentController = StudentController()..initialize();
+
+    _pageController = PageController();
+    _fadeAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _stepHeaderAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 200),
+      vsync: this,
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _fadeAnimationController,
+        curve: Curves.easeInOut,
+      ),
+    );
+    _stepHeaderAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _stepHeaderAnimationController,
+        curve: Curves.easeOut,
+      ),
+    );
+
+    _appointmentPageController = PageController();
+    _appointmentFadeAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _appointmentStepHeaderAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 200),
+      vsync: this,
+    );
+    _appointmentFadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _appointmentFadeAnimationController,
+        curve: Curves.easeInOut,
+      ),
+    );
+    _appointmentStepHeaderAnimation = Tween<double>(begin: 0.0, end: 1.0)
+        .animate(
+          CurvedAnimation(
+            parent: _appointmentStepHeaderAnimationController,
+            curve: Curves.easeOut,
+          ),
+        );
+
+    _fadeAnimationController.forward();
+    _stepHeaderAnimationController.forward();
+    _appointmentFadeAnimationController.forward();
+    _appointmentStepHeaderAnimationController.forward();
   }
 
   @override
@@ -142,10 +229,20 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
 
     _complaintTitleController.dispose();
     _complaintDescriptionController.dispose();
-    _complaintAttachmentController.dispose();
     _complaintTitleFocus.dispose();
     _complaintDescriptionFocus.dispose();
-    _complaintAttachmentFocus.dispose();
+
+    _appointmentDescriptionController.dispose();
+    // _appointmentLocationController.dispose();
+    _appointmentNoteController.dispose();
+    _appointmentPreferredDateController.dispose();
+
+    _pageController.dispose();
+    _fadeAnimationController.dispose();
+    _stepHeaderAnimationController.dispose();
+    _appointmentPageController.dispose();
+    _appointmentFadeAnimationController.dispose();
+    _appointmentStepHeaderAnimationController.dispose();
 
     super.dispose();
   }
@@ -321,6 +418,11 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
 
   String _normalizeStatusValue(String value) {
     return value.toLowerCase().trim().replaceAll(' ', '_');
+  }
+
+  bool _canDeleteComplaint(StudentComplaint complaint) {
+    final status = _normalizeStatusValue(complaint.status);
+    return status == 'pending' || status == 'draft';
   }
 
   String _statusLabel(String value) {
@@ -888,88 +990,30 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
     );
   }
 
-  Future<void> _pickComplaintAttachment() async {
+  bool _matchesSearch(String text, String query, bool useRegex) {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return true;
+    if (!useRegex) {
+      return text.toLowerCase().contains(trimmed.toLowerCase());
+    }
+
     try {
-      final result = await FilePicker.platform.pickFiles(
-        allowMultiple: false,
-        type: FileType.any,
-        withData: false,
-      );
-
-      if (result == null || result.files.isEmpty) return;
-      final path = result.files.single.path?.trim() ?? '';
-      if (path.isEmpty) {
-        _showSnackBar('This picker returned no file path on this platform.');
-        return;
-      }
-
-      if (!mounted) return;
-      setState(() => _complaintAttachmentController.text = path);
-    } catch (error) {
-      _showSnackBar('Could not open file picker: $error');
+      final regex = RegExp(trimmed, caseSensitive: false);
+      return regex.hasMatch(text);
+    } catch (_) {
+      return false;
     }
   }
 
-  Future<void> _captureComplaintAttachment() async {
+  String? _searchPatternError(String query, bool useRegex) {
+    final trimmed = query.trim();
+    if (!useRegex || trimmed.isEmpty) return null;
+
     try {
-      final picker = ImagePicker();
-      final captured = await picker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 88,
-      );
-
-      if (captured == null) return;
-      final path = captured.path.trim();
-      if (path.isEmpty) {
-        _showSnackBar('Camera did not return a valid file path.');
-        return;
-      }
-
-      if (!mounted) return;
-      setState(() => _complaintAttachmentController.text = path);
+      RegExp(trimmed);
+      return null;
     } catch (error) {
-      _showSnackBar('Could not open camera: $error');
-    }
-  }
-
-  Future<void> _chooseComplaintAttachmentSource() async {
-    if (!mounted) return;
-
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.upload_file_outlined),
-                title: const Text('Upload file'),
-                onTap: () => Navigator.of(sheetContext).pop('file'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.photo_camera_outlined),
-                title: const Text('Use camera'),
-                onTap: () => Navigator.of(sheetContext).pop('camera'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.close),
-                title: const Text('Cancel'),
-                onTap: () => Navigator.of(sheetContext).pop(),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-
-    if (choice == 'file') {
-      await _pickComplaintAttachment();
-      return;
-    }
-
-    if (choice == 'camera') {
-      await _captureComplaintAttachment();
+      return 'Invalid regular expression.';
     }
   }
 
@@ -982,7 +1026,28 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
       final categories = _uniqueCategories(controller.categories);
       final title = _complaintTitleController.text.trim();
       final description = _complaintDescriptionController.text.trim();
-      final attachmentPath = _complaintAttachmentController.text.trim();
+      final attachmentPath = _complaintAttachments.isNotEmpty
+          ? _complaintAttachments.first.path?.trim() ?? ''
+          : '';
+
+      // Collect resolver officer IDs
+      final resolverOfficerIds = <int>[];
+      for (final resolverId in _selectedResolverIds) {
+        final resolver = controller.resolverOptions
+            .where((r) => r.id.toString() == resolverId)
+            .cast<CategoryResolverOption?>()
+            .firstWhere((r) => r != null, orElse: () => null);
+        if (resolver != null) {
+          resolverOfficerIds.add(resolver.officerId);
+        }
+      }
+
+      // Combine CC officer IDs and resolver officer IDs
+      final allCcOfficerIds = <int>{
+        ..._selectedCcOfficerIds,
+        ...resolverOfficerIds,
+      }.toList();
+
       final selectedCategory = categories
           .where((category) => category.id == _selectedCategoryId)
           .cast<ComplaintCategory?>()
@@ -1001,10 +1066,8 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
         title: title,
         description: description,
         categoryId: selectedCategory.submitCategoryId,
-        ccOfficerId: _selectedCcOfficerIds.isEmpty
-            ? null
-            : _selectedCcOfficerIds.first,
-        ccOfficerIds: _selectedCcOfficerIds,
+        ccOfficerId: allCcOfficerIds.isEmpty ? null : allCcOfficerIds.first,
+        ccOfficerIds: allCcOfficerIds,
         anonymous: _anonymousComplaint,
         attachmentPath: attachmentPath.isEmpty ? null : attachmentPath,
       );
@@ -1012,12 +1075,16 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
       if (success) {
         _complaintTitleController.clear();
         _complaintDescriptionController.clear();
-        _complaintAttachmentController.clear();
         setState(() {
           _selectedCategoryId = null;
           _selectedCcOfficerIds = [];
           _anonymousComplaint = false;
           _submitComplaintStep = 0;
+          _categorySearchText = '';
+          _categoryRegexEnabled = false;
+          _ccOfficerSearchText = '';
+          _ccRegexEnabled = false;
+          _complaintAttachments = [];
         });
         _showSnackBar(
           'Complaint submitted successfully.',
@@ -1480,21 +1547,194 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
     );
   }
 
+  Future<void> _pickComplaintAttachments() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: [
+          'jpg',
+          'jpeg',
+          'png',
+          'gif',
+          'pdf',
+          'txt',
+          'doc',
+          'docx',
+        ],
+        allowMultiple: true,
+        withData: false,
+      );
+
+      if (result != null && result.files.isNotEmpty) {
+        final validFiles = result.files.where((file) {
+          final sizeInMB = file.size / (1024 * 1024);
+          return sizeInMB <= 5.0;
+        }).toList();
+
+        if (validFiles.length != result.files.length) {
+          _showSnackBar(
+            'Some files were rejected. Only files under 5MB are allowed.',
+          );
+        }
+
+        final newFiles = validFiles.take(5 - _complaintAttachments.length);
+        if (newFiles.length < validFiles.length) {
+          _showSnackBar('Maximum 5 files allowed. Some files were not added.');
+        }
+
+        setState(() {
+          _complaintAttachments.addAll(newFiles);
+        });
+      }
+    } catch (e) {
+      _showSnackBar('Failed to pick files: $e');
+    }
+  }
+
+  Future<void> _captureComplaintAttachment() async {
+    try {
+      final picker = ImagePicker();
+      final photo = await picker.pickImage(source: ImageSource.camera);
+
+      if (photo != null) {
+        final file = PlatformFile(
+          name: photo.name,
+          path: photo.path,
+          size: await photo.length(),
+          bytes: null,
+        );
+
+        final sizeInMB = file.size / (1024 * 1024);
+        if (sizeInMB > 5.0) {
+          _showSnackBar('Image is too large. Maximum size is 5MB.');
+          return;
+        }
+
+        if (_complaintAttachments.length >= 5) {
+          _showSnackBar('Maximum 5 files allowed.');
+          return;
+        }
+
+        setState(() {
+          _complaintAttachments.add(file);
+        });
+      }
+    } catch (e) {
+      _showSnackBar('Failed to capture image: $e');
+    }
+  }
+
+  void _removeAttachment(PlatformFile file) {
+    setState(() {
+      _complaintAttachments.remove(file);
+    });
+  }
+
+  IconData _getFileIcon(PlatformFile file) {
+    final extension = file.extension?.toLowerCase();
+    if (['jpg', 'jpeg', 'png', 'gif'].contains(extension)) {
+      return Icons.image;
+    } else if (extension == 'pdf') {
+      return Icons.picture_as_pdf;
+    } else if (['doc', 'docx'].contains(extension)) {
+      return Icons.description;
+    } else {
+      return Icons.attach_file;
+    }
+  }
+
+  String _formatFileSize(int bytes) {
+    if (bytes == 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    final i = (bytes.bitLength - 1) ~/ 10;
+    return '${(bytes / (1 << (i * 10))).toStringAsFixed(1)} ${units[i]}';
+  }
+
   Widget _submitComplaintTab(StudentController controller) {
     final categories = _uniqueCategories(controller.categories);
+    final categorySearchError = _searchPatternError(
+      _categorySearchText,
+      _categoryRegexEnabled,
+    );
+    final filteredCategories = categorySearchError != null
+        ? <ComplaintCategory>[]
+        : categories
+              .where(
+                (category) => _matchesSearch(
+                  _categoryLabel(category),
+                  _categorySearchText,
+                  _categoryRegexEnabled,
+                ),
+              )
+              .toList(growable: false);
     final resolverOptions = _resolverOptionsForCategory(
       controller,
       _selectedCategoryId,
     );
     final ccOfficers = _ccOfficersForCategory(controller, _selectedCategoryId);
+    final ccSearchError = _searchPatternError(
+      _ccOfficerSearchText,
+      _ccRegexEnabled,
+    );
+    final filteredCcOfficers = ccSearchError != null
+        ? <SelectableOfficer>[]
+        : ccOfficers
+              .where(
+                (officer) => _matchesSearch(
+                  '${officer.name} ${officer.department}',
+                  _ccOfficerSearchText,
+                  _ccRegexEnabled,
+                ),
+              )
+              .toList(growable: false);
+
+    ComplaintCategory? selectedCategory;
+    for (final category in categories) {
+      if (category.id == _selectedCategoryId) {
+        selectedCategory = category;
+        break;
+      }
+    }
 
     final theme = Theme.of(context);
-    final normalizedStep = _submitComplaintStep.clamp(0, 2);
+    final normalizedStep = _submitComplaintStep.clamp(0, 4);
     final canGoBack = normalizedStep > 0;
-    final isLastStep = normalizedStep == 2;
+    final isLastStep = normalizedStep == 4;
+
+    Future<void> animateToNextStep() async {
+      await Future.wait([
+        _fadeAnimationController.reverse(),
+        _stepHeaderAnimationController.reverse(),
+      ]);
+      setState(() => _submitComplaintStep++);
+      _pageController.nextPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+      await Future.wait([
+        _fadeAnimationController.forward(),
+        _stepHeaderAnimationController.forward(),
+      ]);
+    }
+
+    Future<void> animateToPreviousStep() async {
+      await Future.wait([
+        _fadeAnimationController.reverse(),
+        _stepHeaderAnimationController.reverse(),
+      ]);
+      setState(() => _submitComplaintStep--);
+      _pageController.previousPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+      await Future.wait([
+        _fadeAnimationController.forward(),
+        _stepHeaderAnimationController.forward(),
+      ]);
+    }
 
     Future<void> handleNext() async {
-      if (normalizedStep == 0) {
+      if (_submitComplaintStep == 0) {
         if (categories.isEmpty) {
           _showSnackBar('No complaint categories are available right now.');
           return;
@@ -1503,71 +1743,144 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
           _showSnackBar('Please select a category before continuing.');
           return;
         }
-        setState(() => _submitComplaintStep = 1);
+        await animateToNextStep();
         return;
       }
 
-      if (normalizedStep == 1) {
+      if (_submitComplaintStep == 1) {
+        // Resolver selection - no validation needed, can proceed
+        await animateToNextStep();
+        return;
+      }
+
+      if (_submitComplaintStep == 2) {
         if (!_validateComplaintDetails()) {
           return;
         }
-        setState(() => _submitComplaintStep = 2);
+        await animateToNextStep();
+        return;
       }
+
+      if (_submitComplaintStep == 3) {
+        // Validate attachments if needed
+        await animateToNextStep();
+        return;
+      }
+
+      // Step 4 is review & submit, handled by submit button
     }
 
     void handleBack() {
-      if (!canGoBack) return;
-      setState(() => _submitComplaintStep = normalizedStep - 1);
+      if (_submitComplaintStep > 0) {
+        animateToPreviousStep();
+      }
     }
 
     Widget stepHeader() {
-      final labels = const ['Category', 'Details', 'More Options'];
+      final labels = const [
+        'Category',
+        'Resolver Selection',
+        'Details',
+        'Attachments',
+        'Review & Submit',
+      ];
+
+      final icons = const [
+        Icons.category,
+        Icons.people,
+        Icons.description,
+        Icons.attach_file,
+        Icons.send,
+      ];
 
       return Card(
+        elevation: 2,
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Step ${normalizedStep + 1} of 3',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 10),
               Row(
-                children: List.generate(3, (index) {
-                  final active = index == normalizedStep;
-                  final completed = index < normalizedStep;
+                children: [
+                  Icon(
+                    icons[_submitComplaintStep],
+                    color: theme.colorScheme.primary,
+                    size: 24,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Step ${_submitComplaintStep + 1} of 5: ${labels[_submitComplaintStep]}',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: List.generate(5, (index) {
+                  final active = index == _submitComplaintStep;
+                  final completed = index < _submitComplaintStep;
                   final color = completed || active
                       ? theme.colorScheme.primary
                       : theme.colorScheme.outlineVariant;
 
                   return Expanded(
                     child: Container(
-                      margin: EdgeInsets.only(right: index == 2 ? 0 : 8),
+                      margin: EdgeInsets.only(right: index == 4 ? 0 : 8),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Container(
-                            height: 6,
+                            height: 8,
                             decoration: BoxDecoration(
                               color: color,
-                              borderRadius: BorderRadius.circular(999),
+                              borderRadius: BorderRadius.circular(4),
+                              boxShadow: active
+                                  ? [
+                                      BoxShadow(
+                                        color: theme.colorScheme.primary
+                                            .withValues(alpha: 0.3 * 255),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ]
+                                  : null,
                             ),
                           ),
                           const SizedBox(height: 8),
+                          Icon(
+                            icons[index],
+                            size: 16,
+                            color: active
+                                ? theme.colorScheme.primary
+                                : completed
+                                ? theme.colorScheme.primary.withValues(
+                                    alpha: 0.7 * 255,
+                                  )
+                                : theme.colorScheme.onSurfaceVariant.withValues(
+                                    alpha: 0.5 * 255,
+                                  ),
+                          ),
+                          const SizedBox(height: 4),
                           Text(
                             labels[index],
                             style: TextStyle(
+                              fontSize: 10,
                               fontWeight: active
                                   ? FontWeight.w700
                                   : FontWeight.w500,
                               color: active
                                   ? theme.colorScheme.primary
+                                  : completed
+                                  ? theme.colorScheme.onSurface
                                   : theme.colorScheme.onSurfaceVariant,
                             ),
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
@@ -1595,8 +1908,51 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
                 ),
               ),
               const SizedBox(height: 12),
-              if (categories.isEmpty)
-                const Text('No complaint categories are available right now.')
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      decoration: const InputDecoration(
+                        hintText: 'Search categories',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.search),
+                      ),
+                      onChanged: (value) =>
+                          setState(() => _categorySearchText = value),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Checkbox(
+                            value: _categoryRegexEnabled,
+                            onChanged: (value) => setState(
+                              () => _categoryRegexEnabled = value ?? false,
+                            ),
+                          ),
+                          const Text('Regex'),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              if (categorySearchError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    categorySearchError,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ),
+              const SizedBox(height: 12),
+              if (filteredCategories.isEmpty)
+                const Text('No complaint categories match your search.')
               else
                 LayoutBuilder(
                   builder: (context, constraints) {
@@ -1608,7 +1964,7 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
                     return Wrap(
                       spacing: 10,
                       runSpacing: 10,
-                      children: categories
+                      children: filteredCategories
                           .map((category) {
                             final selected = _selectedCategoryId == category.id;
                             final categoryTheme = Theme.of(context);
@@ -1623,6 +1979,12 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
                                     setState(() {
                                       _selectedCategoryId = category.id;
                                       _selectedCcOfficerIds = [];
+                                      _resolverFilters = {
+                                        'campus': '',
+                                        'college': '',
+                                        'department': '',
+                                      };
+                                      _selectedResolverIds = [];
                                     });
                                   },
                                   child: AnimatedContainer(
@@ -1689,6 +2051,36 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
                 style: TextStyle(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 8),
+              if (selectedCategory != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12, bottom: 4),
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Selected category',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _categoryLabel(selectedCategory),
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '${resolverOptions.length} responsible office${resolverOptions.length == 1 ? '' : 's'} will receive this complaint.',
+                            style: TextStyle(color: Colors.grey.shade700),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               if (_selectedCategoryId == null)
                 const Text('Select a category to view resolver chain.')
               else if (resolverOptions.isEmpty)
@@ -1727,7 +2119,222 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
       );
     }
 
-    Widget stepTwoDetails() {
+    Widget stepTwoResolverSelection() {
+      final resolverOptions = _resolverOptionsForCategory(
+        controller,
+        _selectedCategoryId,
+      );
+
+      final campusOptions =
+          resolverOptions
+              .map((r) => r.campusName)
+              .where((name) => name != null && name.isNotEmpty)
+              .toSet()
+              .toList()
+            ..sort();
+
+      final collegeOptions =
+          resolverOptions
+              .where(
+                (r) =>
+                    _resolverFilters['campus']!.isEmpty ||
+                    r.campusName == _resolverFilters['campus'],
+              )
+              .map((r) => r.collegeName)
+              .where((name) => name != null && name.isNotEmpty)
+              .toSet()
+              .toList()
+            ..sort();
+
+      final departmentOptions =
+          resolverOptions
+              .where(
+                (r) =>
+                    (_resolverFilters['campus']!.isEmpty ||
+                        r.campusName == _resolverFilters['campus']) &&
+                    (_resolverFilters['college']!.isEmpty ||
+                        r.collegeName == _resolverFilters['college']),
+              )
+              .map((r) => r.departmentName)
+              .where((name) => name != null && name.isNotEmpty)
+              .toSet()
+              .toList()
+            ..sort();
+
+      final filteredResolvers = resolverOptions.where((resolver) {
+        if (_resolverFilters['campus']!.isNotEmpty &&
+            resolver.campusName != _resolverFilters['campus']) {
+          return false;
+        }
+        if (_resolverFilters['college']!.isNotEmpty &&
+            resolver.collegeName != _resolverFilters['college']) {
+          return false;
+        }
+        if (_resolverFilters['department']!.isNotEmpty &&
+            resolver.departmentName != _resolverFilters['department']) {
+          return false;
+        }
+        return true;
+      }).toList();
+
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Select Resolver Route',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Choose how your complaint should be routed (optional)',
+                style: TextStyle(color: Colors.grey.shade700),
+              ),
+              const SizedBox(height: 16),
+              // Campus Filter
+              DropdownButtonFormField<String>(
+                initialValue: _resolverFilters['campus']!.isEmpty
+                    ? null
+                    : _resolverFilters['campus'],
+                decoration: const InputDecoration(
+                  labelText: 'Campus (Optional)',
+                  border: OutlineInputBorder(),
+                ),
+                items: campusOptions.map((campus) {
+                  return DropdownMenuItem(value: campus, child: Text(campus!));
+                }).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _resolverFilters['campus'] = value ?? '';
+                    _resolverFilters['college'] = '';
+                    _resolverFilters['department'] = '';
+                    _selectedResolverIds.clear();
+                  });
+                },
+              ),
+              const SizedBox(height: 12),
+              // College Filter
+              DropdownButtonFormField<String>(
+                initialValue: _resolverFilters['college']!.isEmpty
+                    ? null
+                    : _resolverFilters['college'],
+                decoration: const InputDecoration(
+                  labelText: 'College (Optional)',
+                  border: OutlineInputBorder(),
+                ),
+                items: collegeOptions.map((college) {
+                  return DropdownMenuItem(
+                    value: college,
+                    child: Text(college!),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _resolverFilters['college'] = value ?? '';
+                    _resolverFilters['department'] = '';
+                    _selectedResolverIds.clear();
+                  });
+                },
+              ),
+              const SizedBox(height: 12),
+              // Department Filter
+              DropdownButtonFormField<String>(
+                initialValue: _resolverFilters['department']!.isEmpty
+                    ? null
+                    : _resolverFilters['department'],
+                decoration: const InputDecoration(
+                  labelText: 'Department (Optional)',
+                  border: OutlineInputBorder(),
+                ),
+                items: departmentOptions.map((department) {
+                  return DropdownMenuItem(
+                    value: department,
+                    child: Text(department!),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _resolverFilters['department'] = value ?? '';
+                    _selectedResolverIds.clear();
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
+              if (filteredResolvers.isNotEmpty) ...[
+                Text(
+                  'Available Routes:',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                ...filteredResolvers.map((resolver) {
+                  final isSelected = _selectedResolverIds.contains(
+                    resolver.id.toString(),
+                  );
+                  return Card(
+                    color: isSelected
+                        ? theme.colorScheme.primaryContainer
+                        : null,
+                    child: ListTile(
+                      title: Text(resolver.officerName),
+                      subtitle: Text(
+                        [
+                          if (resolver.campusName != null) resolver.campusName,
+                          if (resolver.collegeName != null)
+                            resolver.collegeName,
+                          if (resolver.departmentName != null)
+                            resolver.departmentName,
+                          resolver.levelName,
+                        ].join(' • '),
+                      ),
+                      trailing: Checkbox(
+                        value: isSelected,
+                        onChanged: (checked) {
+                          setState(() {
+                            if (checked == true) {
+                              _selectedResolverIds.add(resolver.id.toString());
+                            } else {
+                              _selectedResolverIds.remove(
+                                resolver.id.toString(),
+                              );
+                            }
+                          });
+                        },
+                      ),
+                      onTap: () {
+                        setState(() {
+                          if (isSelected) {
+                            _selectedResolverIds.remove(resolver.id.toString());
+                          } else {
+                            _selectedResolverIds.add(resolver.id.toString());
+                          }
+                        });
+                      },
+                    ),
+                  );
+                }),
+              ] else ...[
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'No resolver routes available for the selected filters.',
+                      style: TextStyle(color: Colors.grey.shade600),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+
+    Widget stepThreeDetails() {
       return Card(
         child: Padding(
           padding: const EdgeInsets.all(14),
@@ -1768,6 +2375,25 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
                   focusNode: _complaintDescriptionFocus,
                   maxLines: 6,
                   textInputAction: TextInputAction.done,
+                  maxLength: 500,
+                  buildCounter:
+                      (
+                        context, {
+                        required currentLength,
+                        required isFocused,
+                        maxLength,
+                      }) {
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            '$currentLength/500',
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 12,
+                            ),
+                          ),
+                        );
+                      },
                   decoration: const InputDecoration(
                     labelText: 'Description',
                     alignLabelWithHint: true,
@@ -1781,6 +2407,9 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
                     if ((value ?? '').trim().length < 10) {
                       return 'Please provide at least 10 characters.';
                     }
+                    if ((value ?? '').length > 500) {
+                      return 'Description must be under 500 characters.';
+                    }
                     return null;
                   },
                 ),
@@ -1791,7 +2420,7 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
       );
     }
 
-    Widget stepThreeOptions() {
+    Widget stepFourOptions() {
       return Column(
         children: [
           Card(
@@ -1842,9 +2471,58 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
                     'Select multiple officers if the complaint should reach more than one office.',
                     style: TextStyle(color: Colors.grey.shade700),
                   ),
+                  const SizedBox(height: 12),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          decoration: InputDecoration(
+                            labelText: 'Search carbon copy officers',
+                            hintText: 'Filter by name or department',
+                            border: const OutlineInputBorder(),
+                            prefixIcon: const Icon(Icons.search),
+                          ),
+                          onChanged: (value) =>
+                              setState(() => _ccOfficerSearchText = value),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Checkbox(
+                                value: _ccRegexEnabled,
+                                onChanged: (value) => setState(
+                                  () => _ccRegexEnabled = value ?? false,
+                                ),
+                              ),
+                              const Text('Regex'),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  if (ccSearchError != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        ccSearchError,
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                    ),
                   const SizedBox(height: 8),
-                  if (ccOfficers.isEmpty)
-                    const Text('No officers available for selected category.')
+                  if (filteredCcOfficers.isEmpty)
+                    Text(
+                      ccOfficers.isEmpty
+                          ? 'No officers available for selected category.'
+                          : 'No officers match your search.',
+                      style: TextStyle(color: Colors.grey.shade700),
+                    )
                   else
                     LayoutBuilder(
                       builder: (context, constraints) {
@@ -1871,7 +2549,7 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
                                 TextButton(
                                   onPressed: () {
                                     setState(() {
-                                      _selectedCcOfficerIds = ccOfficers
+                                      _selectedCcOfficerIds = filteredCcOfficers
                                           .map((officer) => officer.id)
                                           .toList(growable: false);
                                     });
@@ -1892,7 +2570,7 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
                             Wrap(
                               spacing: 8,
                               runSpacing: 8,
-                              children: ccOfficers
+                              children: filteredCcOfficers
                                   .map((officer) {
                                     final selected = _selectedCcOfficerIds
                                         .contains(officer.id);
@@ -1945,52 +2623,113 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Attachment (optional)',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 8),
-                  TextFormField(
-                    controller: _complaintAttachmentController,
-                    focusNode: _complaintAttachmentFocus,
-                    readOnly: true,
-                    onTap: _chooseComplaintAttachmentSource,
-                    decoration: InputDecoration(
-                      labelText: 'Selected file',
-                      helperText: 'Choose Upload file or Use camera',
-                      border: const OutlineInputBorder(),
-                      prefixIcon: const Icon(Icons.attach_file),
-                      suffixIcon: IconButton(
-                        tooltip: 'Attachment options',
-                        onPressed: _chooseComplaintAttachmentSource,
-                        icon: const Icon(Icons.more_horiz),
-                      ),
+                  Text(
+                    'Evidence attachments',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: _pickComplaintAttachment,
-                        icon: const Icon(Icons.upload_file_outlined),
-                        label: const Text('Upload file'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: _captureComplaintAttachment,
-                        icon: const Icon(Icons.photo_camera_outlined),
-                        label: const Text('Use camera'),
-                      ),
-                      if (_complaintAttachmentController.text.trim().isNotEmpty)
-                        TextButton.icon(
-                          onPressed: () =>
-                              setState(_complaintAttachmentController.clear),
-                          icon: const Icon(Icons.clear),
-                          label: const Text('Clear'),
-                        ),
-                    ],
+                  Text(
+                    'Attach supporting files (optional)',
+                    style: TextStyle(color: Colors.grey.shade700),
                   ),
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.grey.shade50,
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.attach_file,
+                          size: 48,
+                          color: Colors.grey.shade400,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Click to upload files or use camera',
+                          style: TextStyle(color: Colors.grey.shade600),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Images, PDFs, Documents under 5MB (Max 5 files)',
+                          style: TextStyle(
+                            color: Colors.grey.shade500,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: _pickComplaintAttachments,
+                              icon: const Icon(Icons.upload_file_outlined),
+                              label: const Text('Upload files'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: _captureComplaintAttachment,
+                              icon: const Icon(Icons.photo_camera_outlined),
+                              label: const Text('Use camera'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_complaintAttachments.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    ..._complaintAttachments.map(
+                      (file) => Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            children: [
+                              Icon(
+                                _getFileIcon(file),
+                                size: 24,
+                                color: Colors.grey.shade600,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      file.name,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    Text(
+                                      _formatFileSize(file.size),
+                                      style: TextStyle(
+                                        color: Colors.grey.shade600,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: () => _removeAttachment(file),
+                                icon: const Icon(Icons.close),
+                                color: Colors.red,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1999,7 +2738,132 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
       );
     }
 
-    final steps = [stepOneCategory(), stepTwoDetails(), stepThreeOptions()];
+    Widget buildReviewItem(String label, String value) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 120,
+              child: Text(
+                '$label:',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                value.isEmpty ? '-' : value,
+                style: TextStyle(color: Colors.grey.shade700),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    Widget stepFiveReview() {
+      final selectedCategoryLabel = selectedCategory != null
+          ? _categoryLabel(selectedCategory)
+          : 'No category selected';
+
+      final ccOfficers = _ccOfficersForCategory(
+        controller,
+        _selectedCategoryId,
+      );
+      final selectedCcOfficers = ccOfficers
+          .where((officer) => _selectedCcOfficerIds.contains(officer.id))
+          .toList();
+
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Review & submit',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 16),
+              buildReviewItem('Title', _complaintTitleController.text),
+              buildReviewItem(
+                'Description',
+                _complaintDescriptionController.text,
+              ),
+              buildReviewItem('Category', selectedCategoryLabel),
+              buildReviewItem(
+                'Identity',
+                _anonymousComplaint ? 'Anonymous' : 'Visible',
+              ),
+              buildReviewItem(
+                'CC Backend Offices',
+                '${selectedCcOfficers.length} selected',
+              ),
+              if (selectedCcOfficers.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.only(left: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: selectedCcOfficers
+                        .map(
+                          (officer) => Text(
+                            '• ${officer.name}',
+                            style: TextStyle(color: Colors.grey.shade700),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ],
+              buildReviewItem(
+                'Resolver Routes',
+                '${_selectedResolverIds.length} selected',
+              ),
+              if (_selectedResolverIds.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.only(left: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: _selectedResolverIds
+                        .map((resolverId) {
+                          final resolver = controller.resolverOptions
+                              .where((r) => r.id.toString() == resolverId)
+                              .cast<CategoryResolverOption?>()
+                              .firstWhere((r) => r != null, orElse: () => null);
+                          return resolver != null
+                              ? Text(
+                                  '• ${resolver.officerName} (${resolver.levelName})',
+                                  style: TextStyle(color: Colors.grey.shade700),
+                                )
+                              : const SizedBox.shrink();
+                        })
+                        .where((widget) => widget is! SizedBox)
+                        .toList(),
+                  ),
+                ),
+              ],
+              buildReviewItem(
+                'Attachments',
+                '${_complaintAttachments.length} files',
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final steps = [
+      stepOneCategory(),
+      stepTwoResolverSelection(),
+      stepThreeDetails(),
+      stepFourOptions(),
+      stepFiveReview(),
+    ];
 
     return RefreshIndicator(
       onRefresh: controller.initialize,
@@ -2014,9 +2878,40 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
             ),
           ),
           const SizedBox(height: _space2),
-          stepHeader(),
+          FadeTransition(opacity: _stepHeaderAnimation, child: stepHeader()),
           const SizedBox(height: 12),
-          steps[normalizedStep],
+          Container(
+            height: MediaQuery.of(context).size.height * 0.65,
+            margin: const EdgeInsets.symmetric(vertical: 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: theme.colorScheme.surface,
+              boxShadow: [
+                BoxShadow(
+                  color: theme.colorScheme.shadow.withValues(alpha: 0.1 * 255),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: PageView.builder(
+                controller: _pageController,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: steps.length,
+                itemBuilder: (context, index) {
+                  return FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: steps[index],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
           const SizedBox(height: 16),
           Row(
             children: [
@@ -2240,12 +3135,13 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
                             icon: const Icon(Icons.forum_outlined),
                             label: const Text('Details'),
                           ),
-                          OutlinedButton.icon(
-                            onPressed: () =>
-                                _deleteComplaint(controller, complaint),
-                            icon: const Icon(Icons.delete_outline),
-                            label: const Text('Delete'),
-                          ),
+                          if (_canDeleteComplaint(complaint))
+                            OutlinedButton.icon(
+                              onPressed: () =>
+                                  _deleteComplaint(controller, complaint),
+                              icon: const Icon(Icons.delete_outline),
+                              label: const Text('Delete'),
+                            ),
                         ],
                       ),
                     ],
@@ -2308,39 +3204,8 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
     await controller.refreshComplaints();
   }
 
-  String _appointmentSlotSummary(AppointmentAvailabilityItem slot) {
-    final parts = <String>[];
-    if (slot.officerName.isNotEmpty) {
-      parts.add(slot.officerName);
-    }
-    if (slot.availableDate.isNotEmpty) {
-      parts.add(slot.availableDate);
-    }
-    if (slot.startTime.isNotEmpty && slot.endTime.isNotEmpty) {
-      parts.add('${slot.startTime} - ${slot.endTime}');
-    }
-    return parts.join(' • ');
-  }
-
-  String _appointmentSlotDetails(AppointmentAvailabilityItem slot) {
-    final details = <String>[];
-    if (slot.availableDate.isNotEmpty) {
-      details.add('Date: ${slot.availableDate}');
-    }
-    if (slot.startTime.isNotEmpty && slot.endTime.isNotEmpty) {
-      details.add('Time: ${slot.startTime} - ${slot.endTime}');
-    }
-    if (slot.source.isNotEmpty) {
-      details.add('Source: ${slot.source}');
-    }
-    details.add(slot.isFree ? 'Status: Free' : 'Status: Booked');
-    return details.join('\n');
-  }
-
-  Future<void> _openAppointmentRequestDialog(
-    StudentController controller, {
-    AppointmentAvailabilityItem? preselectedSlot,
-  }) async {
+  // Appointment Request Form Methods
+  void _startAppointmentRequest(StudentController controller) {
     final availableSlots = controller.appointmentAvailabilities
         .where((slot) => slot.isFree)
         .toList(growable: false);
@@ -2353,12 +3218,256 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
       return;
     }
 
-    final formKey = GlobalKey<FormState>();
-    final descriptionController = TextEditingController();
-    final locationController = TextEditingController();
-    final noteController = TextEditingController();
-    final preferredDateController = TextEditingController();
+    setState(() {
+      _isRequestingAppointment = true;
+      _appointmentRequestStep = 0;
+      _selectedAppointmentSlot = availableSlots.first;
+      _selectedIssueType = 'other';
+      _appointmentDescriptionController.clear();
+      // _appointmentLocationController.clear();
+      _appointmentNoteController.clear();
+      _appointmentPreferredDateController.text =
+          availableSlots.first.availableDate;
+    });
+  }
 
+  void _cancelAppointmentRequest() {
+    setState(() {
+      _isRequestingAppointment = false;
+      _appointmentRequestStep = 0;
+      _selectedAppointmentSlot = null;
+      _selectedIssueType = 'other';
+      _appointmentDescriptionController.clear();
+      // _appointmentLocationController.clear();
+      _appointmentNoteController.clear();
+      _appointmentPreferredDateController.clear();
+    });
+  }
+
+  Future<void> _submitAppointmentRequest(StudentController controller) async {
+    if (!_appointmentFormKey.currentState!.validate()) {
+      return;
+    }
+
+    final preferredDateText = _appointmentPreferredDateController.text.trim();
+    final preferredDate = DateTime.tryParse(
+      preferredDateText.isNotEmpty
+          ? preferredDateText
+          : _selectedAppointmentSlot!.availableDate,
+    );
+
+    final success = await controller.requestAppointment(
+      availabilitySlotId: _selectedAppointmentSlot!.id,
+      description: _appointmentDescriptionController.text.trim(),
+      issueType: _selectedIssueType,
+      preferredDate: preferredDate,
+      // location: _appointmentLocationController.text.trim().isEmpty
+      //     ? null
+      //     : _appointmentLocationController.text.trim(),
+      note: _appointmentNoteController.text.trim().isEmpty
+          ? null
+          : _appointmentNoteController.text.trim(),
+    );
+
+    if (!mounted) return;
+
+    if (success) {
+      _cancelAppointmentRequest();
+      _showSnackBar(
+        'Appointment request submitted successfully.',
+        backgroundColor: Colors.green,
+      );
+    } else {
+      _showSnackBar(
+        controller.error ?? 'Unable to request appointment.',
+        backgroundColor: Colors.red,
+      );
+    }
+  }
+
+  Future<void> appointmentAnimateToNextStep() async {
+    await Future.wait([
+      _appointmentFadeAnimationController.reverse(),
+      _appointmentStepHeaderAnimationController.reverse(),
+    ]);
+    setState(() => _appointmentRequestStep++);
+    _appointmentPageController.nextPage(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
+    await Future.wait([
+      _appointmentFadeAnimationController.forward(),
+      _appointmentStepHeaderAnimationController.forward(),
+    ]);
+  }
+
+  Future<void> appointmentAnimateToPreviousStep() async {
+    await Future.wait([
+      _appointmentFadeAnimationController.reverse(),
+      _appointmentStepHeaderAnimationController.reverse(),
+    ]);
+    setState(() => _appointmentRequestStep--);
+    _appointmentPageController.previousPage(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
+    await Future.wait([
+      _appointmentFadeAnimationController.forward(),
+      _appointmentStepHeaderAnimationController.forward(),
+    ]);
+  }
+
+  Future<void> handleAppointmentNext(StudentController controller) async {
+    if (_appointmentRequestStep == 0) {
+      // Category/Issue Type selection - always proceed
+      await appointmentAnimateToNextStep();
+      return;
+    }
+
+    if (_appointmentRequestStep == 1) {
+      // Slot selection - always proceed
+      await appointmentAnimateToNextStep();
+      return;
+    }
+
+    if (_appointmentRequestStep == 2) {
+      // Details - validate form
+      if (!_appointmentFormKey.currentState!.validate()) {
+        return;
+      }
+      await appointmentAnimateToNextStep();
+      return;
+    }
+
+    // Step 3 is review & submit, handled by submit button
+  }
+
+  void handleAppointmentBack() {
+    if (_appointmentRequestStep > 0) {
+      appointmentAnimateToPreviousStep();
+    }
+  }
+
+  Widget appointmentStepHeader() {
+    final labels = const [
+      'Issue Type',
+      'Select Slot',
+      'Details',
+      'Review & Submit',
+    ];
+
+    final icons = const [
+      Icons.category,
+      Icons.schedule,
+      Icons.description,
+      Icons.send,
+    ];
+
+    final theme = Theme.of(context);
+
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  icons[_appointmentRequestStep],
+                  color: theme.colorScheme.primary,
+                  size: 24,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Step ${_appointmentRequestStep + 1} of 4: ${labels[_appointmentRequestStep]}',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: List.generate(4, (index) {
+                final active = index == _appointmentRequestStep;
+                final completed = index < _appointmentRequestStep;
+                final color = completed || active
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.outlineVariant;
+
+                return Expanded(
+                  child: Container(
+                    margin: EdgeInsets.only(right: index == 3 ? 0 : 8),
+                    child: Column(
+                      children: [
+                        Container(
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: color,
+                            borderRadius: BorderRadius.circular(4),
+                            boxShadow: active
+                                ? [
+                                    BoxShadow(
+                                      color: theme.colorScheme.primary
+                                          .withValues(alpha: 0.3 * 255),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ]
+                                : null,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Icon(
+                          icons[index],
+                          size: 16,
+                          color: active
+                              ? theme.colorScheme.primary
+                              : completed
+                              ? theme.colorScheme.primary.withValues(
+                                  alpha: 0.7 * 255,
+                                )
+                              : theme.colorScheme.onSurfaceVariant.withValues(
+                                  alpha: 0.5 * 255,
+                                ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          labels[index],
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: active
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                            color: active
+                                ? theme.colorScheme.primary
+                                : completed
+                                ? theme.colorScheme.onSurface
+                                : theme.colorScheme.onSurfaceVariant,
+                          ),
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget appointmentStepOneIssueType() {
+    final theme = Theme.of(context);
     final issueTypeOptions = <Map<String, String>>[
       {'value': 'complaint', 'label': 'Complaint'},
       {'value': 'support', 'label': 'Support'},
@@ -2367,217 +3476,323 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
       {'value': 'other', 'label': 'Other'},
     ];
 
-    final messenger = ScaffoldMessenger.of(context);
-    AppointmentAvailabilityItem selectedSlot =
-        preselectedSlot != null && availableSlots.contains(preselectedSlot)
-        ? preselectedSlot
-        : availableSlots.first;
-    String selectedIssueType = 'other';
-    bool submitting = false;
-
-    Future<void> submit(
-      BuildContext dialogContext,
-      StateSetter setDialogState,
-    ) async {
-      if (!formKey.currentState!.validate()) {
-        return;
-      }
-
-      setDialogState(() => submitting = true);
-      final navigator = Navigator.of(dialogContext);
-
-      final preferredDateText = preferredDateController.text.trim();
-      final preferredDate = DateTime.tryParse(
-        preferredDateText.isNotEmpty
-            ? preferredDateText
-            : selectedSlot.availableDate,
-      );
-
-      final success = await controller.requestAppointment(
-        availabilitySlotId: selectedSlot.id,
-        description: descriptionController.text.trim(),
-        issueType: selectedIssueType,
-        preferredDate: preferredDate,
-        location: locationController.text.trim().isEmpty
-            ? null
-            : locationController.text.trim(),
-        note: noteController.text.trim().isEmpty
-            ? null
-            : noteController.text.trim(),
-      );
-
-      if (!mounted) return;
-
-      if (success) {
-        navigator.pop(true);
-        return;
-      }
-
-      setDialogState(() => submitting = false);
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(controller.error ?? 'Unable to request appointment.'),
-          backgroundColor: Colors.redAccent,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
-
-    final success = await showDialog<bool>(
-      context: context,
-      barrierDismissible: !controller.isRequestingAppointment,
-      builder: (dialogContext) {
-        preferredDateController.text = selectedSlot.availableDate;
-
-        return StatefulBuilder(
-          builder: (dialogContext, setDialogState) {
-            return AlertDialog(
-              title: const Text('Request Appointment'),
-              content: SingleChildScrollView(
-                child: Form(
-                  key: formKey,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      DropdownButtonFormField<AppointmentAvailabilityItem>(
-                        initialValue: selectedSlot,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          labelText: 'Available slot',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: availableSlots
-                            .map(
-                              (slot) =>
-                                  DropdownMenuItem<AppointmentAvailabilityItem>(
-                                    value: slot,
-                                    child: Text(_appointmentSlotSummary(slot)),
-                                  ),
-                            )
-                            .toList(growable: false),
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setDialogState(() {
-                            selectedSlot = value;
-                            preferredDateController.text = value.availableDate;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          _appointmentSlotDetails(selectedSlot),
-                          style: TextStyle(color: Colors.grey.shade700),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        initialValue: selectedIssueType,
-                        decoration: const InputDecoration(
-                          labelText: 'Issue type',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: issueTypeOptions
-                            .map(
-                              (item) => DropdownMenuItem<String>(
-                                value: item['value'],
-                                child: Text(
-                                  item['label'] ?? item['value'] ?? '',
-                                ),
-                              ),
-                            )
-                            .toList(growable: false),
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setDialogState(() => selectedIssueType = value);
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: preferredDateController,
-                        decoration: const InputDecoration(
-                          labelText: 'Preferred date',
-                          border: OutlineInputBorder(),
-                          helperText: 'Defaults to the selected slot date.',
-                        ),
-                        readOnly: true,
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: descriptionController,
-                        decoration: const InputDecoration(
-                          labelText: 'Description',
-                          border: OutlineInputBorder(),
-                        ),
-                        minLines: 3,
-                        maxLines: 5,
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Please enter a description';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: locationController,
-                        decoration: const InputDecoration(
-                          labelText: 'Location',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: noteController,
-                        decoration: const InputDecoration(
-                          labelText: 'Note',
-                          border: OutlineInputBorder(),
-                        ),
-                        minLines: 2,
-                        maxLines: 4,
-                      ),
-                    ],
-                  ),
-                ),
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Select Issue Type',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
               ),
-              actions: [
-                TextButton(
-                  onPressed: submitting
-                      ? null
-                      : () => Navigator.pop(dialogContext, false),
-                  child: const Text('Cancel'),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Choose the type of issue you need assistance with. This helps us route your appointment to the right department.',
+              style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 16),
+            ...issueTypeOptions.map((option) {
+              final isSelected = _selectedIssueType == option['value'];
+              return Card(
+                color: isSelected ? theme.colorScheme.primaryContainer : null,
+                child: ListTile(
+                  leading: Icon(
+                    isSelected
+                        ? Icons.check_circle
+                        : Icons.radio_button_unchecked,
+                    color: isSelected
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  title: Text(option['label']!),
+                  subtitle: Text(_getIssueTypeDescription(option['value']!)),
+                  onTap: () {
+                    setState(() => _selectedIssueType = option['value']!);
+                  },
                 ),
-                FilledButton(
-                  onPressed: submitting
-                      ? null
-                      : () => submit(dialogContext, setDialogState),
-                  child: submitting
-                      ? const SizedBox(
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Submit Request'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+              );
+            }),
+          ],
+        ),
+      ),
     );
+  }
 
-    descriptionController.dispose();
-    locationController.dispose();
-    noteController.dispose();
-    preferredDateController.dispose();
+  Widget appointmentStepTwoSlotSelection(StudentController controller) {
+    final theme = Theme.of(context);
+    final availableSlots = controller.appointmentAvailabilities
+        .where((slot) => slot.isFree)
+        .toList(growable: false);
 
-    if (success == true && mounted) {
-      _showSnackBar(
-        'Appointment request submitted successfully.',
-        backgroundColor: Colors.green,
-      );
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Select Available Slot',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Choose a convenient time slot for your appointment. All times are displayed in your local timezone.',
+              style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 16),
+            if (availableSlots.isEmpty)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text('No available slots found.'),
+                ),
+              )
+            else
+              ...availableSlots.map((slot) {
+                final isSelected = _selectedAppointmentSlot?.id == slot.id;
+                return Card(
+                  color: isSelected ? theme.colorScheme.primaryContainer : null,
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    leading: Icon(
+                      isSelected ? Icons.check_circle : Icons.schedule,
+                      color: isSelected
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                    title: Text(
+                      slot.officerName.isNotEmpty
+                          ? slot.officerName
+                          : 'Available Officer',
+                    ),
+                    subtitle: Text(
+                      [
+                        if (slot.availableDate.isNotEmpty) slot.availableDate,
+                        if (slot.startTime.isNotEmpty &&
+                            slot.endTime.isNotEmpty)
+                          '${slot.startTime} - ${slot.endTime}',
+                        if (slot.source.isNotEmpty) 'Source: ${slot.source}',
+                      ].join(' • '),
+                    ),
+                    isThreeLine: true,
+                    onTap: () {
+                      setState(() {
+                        _selectedAppointmentSlot = slot;
+                        _appointmentPreferredDateController.text =
+                            slot.availableDate;
+                      });
+                    },
+                  ),
+                );
+              }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget appointmentStepThreeDetails() {
+    final theme = Theme.of(context);
+
+    return Form(
+      key: _appointmentFormKey,
+      child: Column(
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Appointment Details',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Provide details about your appointment request. Be specific about what you need help with.',
+                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _appointmentDescriptionController,
+                    decoration: const InputDecoration(
+                      labelText: 'Description *',
+                      hintText: 'Describe the issue you need assistance with',
+                      border: OutlineInputBorder(),
+                    ),
+                    minLines: 3,
+                    maxLines: 5,
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Please enter a description';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  // TextFormField(
+                  //   controller: _appointmentLocationController,
+                  //   decoration: const InputDecoration(
+                  //     labelText: 'Preferred Location',
+                  //     hintText: 'Where would you like to meet?',
+                  //     border: OutlineInputBorder(),
+                  //   ),
+                  // ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _appointmentPreferredDateController,
+                    decoration: const InputDecoration(
+                      labelText: 'Preferred Date',
+                      hintText: 'Leave empty to use selected slot date',
+                      border: OutlineInputBorder(),
+                    ),
+                    readOnly: true,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _appointmentNoteController,
+                    decoration: const InputDecoration(
+                      labelText: 'Additional Notes',
+                      hintText: 'Any additional information',
+                      border: OutlineInputBorder(),
+                    ),
+                    minLines: 2,
+                    maxLines: 4,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget appointmentStepFourReview(StudentController controller) {
+    final theme = Theme.of(context);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Review & Submit',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Please review your appointment request details before submitting.',
+              style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 16),
+            _buildAppointmentReviewItem(
+              'Issue Type',
+              _getIssueTypeDisplay(_selectedIssueType),
+            ),
+            _buildAppointmentReviewItem(
+              'Selected Slot',
+              _appointmentSlotSummary(_selectedAppointmentSlot!),
+            ),
+            _buildAppointmentReviewItem(
+              'Description',
+              _appointmentDescriptionController.text.trim(),
+            ),
+            // if (_appointmentLocationController.text.trim().isNotEmpty)
+            //   _buildAppointmentReviewItem(
+            //     'Location',
+            //     _appointmentLocationController.text.trim(),
+            //   ),
+            if (_appointmentPreferredDateController.text.trim().isNotEmpty)
+              _buildAppointmentReviewItem(
+                'Preferred Date',
+                _appointmentPreferredDateController.text.trim(),
+              ),
+            if (_appointmentNoteController.text.trim().isNotEmpty)
+              _buildAppointmentReviewItem(
+                'Notes',
+                _appointmentNoteController.text.trim(),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAppointmentReviewItem(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getIssueTypeDescription(String value) {
+    switch (value) {
+      case 'complaint':
+        return 'File a formal complaint or grievance';
+      case 'support':
+        return 'Get technical or general support';
+      case 'inquiry':
+        return 'Ask questions or get information';
+      case 'service_request':
+        return 'Request a specific service or action';
+      case 'other':
+      default:
+        return 'Other type of assistance needed';
     }
+  }
+
+  String _getIssueTypeDisplay(String value) {
+    switch (value) {
+      case 'complaint':
+        return 'Complaint';
+      case 'support':
+        return 'Support';
+      case 'inquiry':
+        return 'Inquiry';
+      case 'service_request':
+        return 'Service Request';
+      case 'other':
+      default:
+        return 'Other';
+    }
+  }
+
+  String _appointmentSlotSummary(AppointmentAvailabilityItem slot) {
+    final parts = <String>[];
+    if (slot.officerName.isNotEmpty) {
+      parts.add(slot.officerName);
+    }
+    if (slot.availableDate.isNotEmpty) {
+      parts.add(slot.availableDate);
+    }
+    if (slot.startTime.isNotEmpty && slot.endTime.isNotEmpty) {
+      parts.add('${slot.startTime} - ${slot.endTime}');
+    }
+    return parts.join(' • ');
   }
 
   Widget _appointmentsTab(StudentController controller) {
@@ -2597,16 +3812,99 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 10),
-          FilledButton.icon(
-            onPressed:
-                controller.appointmentAvailabilities.any((slot) => slot.isFree)
-                ? () => _openAppointmentRequestDialog(controller)
-                : null,
-            icon: const Icon(Icons.add_task_outlined),
-            label: const Text('Request Appointment'),
-          ),
+          if (!_isRequestingAppointment)
+            FilledButton.icon(
+              onPressed:
+                  controller.appointmentAvailabilities.any(
+                    (slot) => slot.isFree,
+                  )
+                  ? () => _startAppointmentRequest(controller)
+                  : null,
+              icon: const Icon(Icons.add_task_outlined),
+              label: const Text('Request Appointment'),
+            )
+          else
+            OutlinedButton.icon(
+              onPressed: _cancelAppointmentRequest,
+              icon: const Icon(Icons.close),
+              label: const Text('Cancel Request'),
+            ),
           const SizedBox(height: 8),
-          if (controller.appointments.isEmpty)
+          if (_isRequestingAppointment) ...[
+            FadeTransition(
+              opacity: _appointmentStepHeaderAnimation,
+              child: appointmentStepHeader(),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              height: MediaQuery.of(context).size.height * 0.65,
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: Theme.of(context).colorScheme.surface,
+                boxShadow: [
+                  BoxShadow(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.shadow.withValues(alpha: 0.1 * 255),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: PageView.builder(
+                  controller: _appointmentPageController,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: 4,
+                  itemBuilder: (context, index) {
+                    return FadeTransition(
+                      opacity: _appointmentFadeAnimation,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: index == 0
+                            ? appointmentStepOneIssueType()
+                            : index == 1
+                            ? appointmentStepTwoSlotSelection(controller)
+                            : index == 2
+                            ? appointmentStepThreeDetails()
+                            : appointmentStepFourReview(controller),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _appointmentRequestStep > 0
+                        ? appointmentAnimateToPreviousStep
+                        : null,
+                    icon: const Icon(Icons.arrow_back),
+                    label: const Text('Back'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _appointmentRequestStep == 3
+                        ? () => _submitAppointmentRequest(controller)
+                        : () => handleAppointmentNext(controller),
+                    icon: _appointmentRequestStep == 3
+                        ? const Icon(Icons.send)
+                        : const Icon(Icons.arrow_forward),
+                    label: Text(
+                      _appointmentRequestStep == 3 ? 'Submit Request' : 'Next',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ] else if (controller.appointments.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 18),
               child: Text('No appointments have been scheduled yet.'),
@@ -2638,7 +3936,7 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
                       appointment.officerName.isEmpty
                           ? ''
                           : 'Officer: ${appointment.officerName}',
-                      appointment.location,
+                      // appointment.location,
                       appointment.note.isEmpty
                           ? ''
                           : 'Note: ${appointment.note}',
@@ -2694,10 +3992,10 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
                   isThreeLine: true,
                   trailing: slot.isFree
                       ? FilledButton.tonalIcon(
-                          onPressed: () => _openAppointmentRequestDialog(
-                            controller,
-                            preselectedSlot: slot,
-                          ),
+                          onPressed: () {
+                            _startAppointmentRequest(controller);
+                            setState(() => _selectedAppointmentSlot = slot);
+                          },
                           icon: const Icon(Icons.event_available_outlined),
                           label: const Text('Request'),
                         )
@@ -3331,9 +4629,9 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
           ? profile!.phone
           : (authUser?.phone ?? ''),
     );
-    final studentIdController = TextEditingController(
-      text: profile?.studentId ?? '',
-    );
+    // final studentIdController = TextEditingController(
+    //   text: profile?.studentId ?? '',
+    // );
     final campusIdController = TextEditingController(
       text: profile?.campusId ?? '',
     );
@@ -3412,13 +4710,13 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      TextField(
-                        controller: studentIdController,
-                        decoration: const InputDecoration(
-                          labelText: 'Student ID',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
+                      // TextField(
+                      //   controller: studentIdController,
+                      //   decoration: const InputDecoration(
+                      //     labelText: 'Student ID',
+                      //     border: OutlineInputBorder(),
+                      //   ),
+                      // ),
                       const SizedBox(height: 12),
                       TextField(
                         controller: campusIdController,
@@ -3459,7 +4757,7 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
                               'department': profile!.departmentId,
                             if (profile?.programId != null)
                               'program': profile!.programId,
-                            'student_id': studentIdController.text.trim(),
+                            // 'student_id': studentIdController.text.trim(),
                             'campus_id': campusIdController.text.trim(),
                             if (_parseNullableInt(yearOfStudyController.text) !=
                                 null)
@@ -3517,7 +4815,7 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
     emailController.dispose();
     gmailController.dispose();
     phoneController.dispose();
-    studentIdController.dispose();
+    // studentIdController.dispose();
     campusIdController.dispose();
     yearOfStudyController.dispose();
   }
@@ -3676,10 +4974,10 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
             ? profile!.phone
             : (authUser?.phone.isNotEmpty == true ? authUser!.phone : '-'),
       ),
-      _ProfileRow(
-        'Student ID',
-        profile?.studentId.isNotEmpty == true ? profile!.studentId : '-',
-      ),
+      // _ProfileRow(
+      //   'Student ID',
+      //   profile?.studentId.isNotEmpty == true ? profile!.studentId : '-',
+      // ),
       _ProfileRow(
         'Campus ID',
         profile?.campusId.isNotEmpty == true ? profile!.campusId : '-',
@@ -3780,7 +5078,7 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
           final isWide = MediaQuery.sizeOf(context).width >= 1000;
           final pages = [
             _homeTab(controller),
-            const HelpdeskTabPage(),
+            const HelpdeskSessionsPage(),
             _submitComplaintTab(controller),
             _myComplaintsTab(controller),
             _appointmentsTab(controller),
@@ -3818,34 +5116,38 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
                     child: LayoutBuilder(
                       builder: (context, constraints) {
                         final isWide = constraints.maxWidth >= 1000;
+                        final isHelpdeskTab =
+                            selectedIndex == StudentDashboardTab.helpdesk.index;
 
-                        final content = Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(
-                              maxWidth: _maxContentWidth,
-                            ),
-                            child: Column(
-                              children: [
-                                if (controller.error != null)
-                                  MaterialBanner(
-                                    content: Text(controller.error!),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: controller.initialize,
-                                        child: const Text('Retry'),
+                        final Widget content = isHelpdeskTab
+                            ? pages[selectedIndex]
+                            : Center(
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: _maxContentWidth,
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      if (controller.error != null)
+                                        MaterialBanner(
+                                          content: Text(controller.error!),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: controller.initialize,
+                                              child: const Text('Retry'),
+                                            ),
+                                          ],
+                                        ),
+                                      Expanded(
+                                        child: IndexedStack(
+                                          index: selectedIndex,
+                                          children: pages,
+                                        ),
                                       ),
                                     ],
                                   ),
-                                Expanded(
-                                  child: IndexedStack(
-                                    index: selectedIndex,
-                                    children: pages,
-                                  ),
                                 ),
-                              ],
-                            ),
-                          ),
-                        );
+                              );
 
                         if (!isWide) {
                           return content;

@@ -61,7 +61,7 @@ class _RegisterPageState extends State<RegisterPage> {
     _microsoftIdentity = identity;
     _microsoftVerified = true;
     _emailController.text = identity.email;
-    _gmailAccountController.text = identity.email;
+    // Gmail Account is NOT auto-filled - user must enter it manually
     _usernameController.text = identity.suggestedUsername;
     _firstNameController.text = identity.firstName;
     _lastNameController.text = identity.lastName;
@@ -147,6 +147,43 @@ class _RegisterPageState extends State<RegisterPage> {
     );
   }
 
+  Widget _buildAutoFilledField(String label, String value) {
+    return Row(
+      children: [
+        Icon(
+          Icons.check_circle_rounded,
+          color: Colors.green.shade600,
+          size: 18,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -222,12 +259,43 @@ class _RegisterPageState extends State<RegisterPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'Microsoft account linked',
-                              style: TextStyle(fontWeight: FontWeight.w700),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.verified_user_rounded,
+                                  color: Colors.blueAccent,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Microsoft Account Verified',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.blueAccent,
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 6),
-                            Text(_microsoftIdentity!.email),
+                            const SizedBox(height: 12),
+                            _buildAutoFilledField(
+                              'Email',
+                              _microsoftIdentity!.email,
+                            ),
+                            const SizedBox(height: 8),
+                            _buildAutoFilledField(
+                              'Account',
+                              _microsoftIdentity!.email,
+                            ),
+                            const SizedBox(height: 8),
+                            _buildAutoFilledField(
+                              'Name',
+                              '${_microsoftIdentity!.firstName} ${_microsoftIdentity!.lastName}',
+                            ),
+                            const SizedBox(height: 8),
+                            _buildAutoFilledField(
+                              'Username',
+                              _microsoftIdentity!.suggestedUsername,
+                            ),
                           ],
                         ),
                       ),
@@ -255,6 +323,7 @@ class _RegisterPageState extends State<RegisterPage> {
                       label: 'Email',
                       prefixIcon: Icons.email_outlined,
                       readOnly: _microsoftVerified,
+                      isAutoFilled: _microsoftVerified,
                       helperText: _microsoftVerified
                           ? 'Locked to your verified Microsoft email.'
                           : null,
@@ -280,10 +349,6 @@ class _RegisterPageState extends State<RegisterPage> {
                       controller: _gmailAccountController,
                       label: 'Gmail Account',
                       prefixIcon: Icons.alternate_email,
-                      readOnly: _microsoftVerified,
-                      helperText: _microsoftVerified
-                          ? 'Auto-filled from verified Microsoft account.'
-                          : null,
                       keyboardType: TextInputType.emailAddress,
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
@@ -300,6 +365,8 @@ class _RegisterPageState extends State<RegisterPage> {
                       controller: _usernameController,
                       label: 'Username',
                       prefixIcon: Icons.person_outline,
+                      readOnly: _microsoftVerified,
+                      isAutoFilled: _microsoftVerified,
                       inputFormatters: [
                         FilteringTextInputFormatter.allow(
                           RegExp(r'[a-zA-Z0-9._-]'),
@@ -323,6 +390,8 @@ class _RegisterPageState extends State<RegisterPage> {
                             controller: _firstNameController,
                             label: 'First Name',
                             prefixIcon: Icons.badge_outlined,
+                            readOnly: _microsoftVerified,
+                            isAutoFilled: _microsoftVerified,
                             validator: (value) {
                               if (value == null || value.trim().isEmpty) {
                                 return 'Required';
@@ -337,6 +406,8 @@ class _RegisterPageState extends State<RegisterPage> {
                             controller: _lastNameController,
                             label: 'Last Name',
                             prefixIcon: Icons.badge_outlined,
+                            readOnly: _microsoftVerified,
+                            isAutoFilled: _microsoftVerified,
                             validator: (value) {
                               if (value == null || value.trim().isEmpty) {
                                 return 'Required';

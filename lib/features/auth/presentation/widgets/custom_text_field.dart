@@ -11,6 +11,7 @@ class CustomTextField extends StatefulWidget {
   final bool readOnly;
   final String? helperText;
   final List<TextInputFormatter>? inputFormatters;
+  final bool isAutoFilled;
 
   const CustomTextField({
     super.key,
@@ -23,6 +24,7 @@ class CustomTextField extends StatefulWidget {
     this.readOnly = false,
     this.helperText,
     this.inputFormatters,
+    this.isAutoFilled = false,
   });
 
   @override
@@ -57,11 +59,19 @@ class _CustomTextFieldState extends State<CustomTextField> {
                   });
                 },
               )
+            : widget.readOnly && widget.isAutoFilled
+            ? Icon(Icons.check_circle_rounded, color: Colors.green.shade600)
+            : widget.readOnly
+            ? const Icon(Icons.lock_outline, color: Colors.grey)
             : null,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
+          borderSide: BorderSide(
+            color: widget.isAutoFilled
+                ? Colors.green.shade300
+                : Colors.grey.shade300,
+          ),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -69,10 +79,18 @@ class _CustomTextFieldState extends State<CustomTextField> {
         ),
         disabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
+          borderSide: BorderSide(
+            color: widget.isAutoFilled
+                ? Colors.green.shade300
+                : Colors.grey.shade300,
+          ),
         ),
         filled: true,
-        fillColor: widget.readOnly ? Colors.grey.shade100 : Colors.grey.shade50,
+        fillColor: widget.readOnly
+            ? (widget.isAutoFilled
+                  ? Colors.green.shade50
+                  : Colors.grey.shade100)
+            : Colors.grey.shade50,
       ),
     );
   }

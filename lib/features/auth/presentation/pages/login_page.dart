@@ -52,22 +52,23 @@ class _LoginPageState extends State<LoginPage> {
 
     if (!mounted) return;
 
-    if (result?.nextStep == MicrosoftSignInNextStep.dashboard) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const HomePage()),
-      );
-      return;
-    }
-
-    if (result?.nextStep == MicrosoftSignInNextStep.register &&
-        result?.identity != null) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => RegisterPage(initialIdentity: result!.identity),
-        ),
-      );
+    if (result != null) {
+      if (result.nextStep == MicrosoftSignInNextStep.dashboard) {
+        // User exists and is logged in
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const HomePage()),
+        );
+      } else if (result.nextStep == MicrosoftSignInNextStep.register) {
+        // New user, proceed to registration
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) =>
+                RegisterPage(initialIdentity: result.identity),
+          ),
+        );
+      }
       return;
     }
 

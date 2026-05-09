@@ -790,7 +790,13 @@ class _HelpdeskTabPageState extends State<HelpdeskTabPage> {
                               ),
                             ),
                           ),
-                          onTap: () => _selectSession(session),
+                          onTap: () {
+                            if (_isWideLayout(context)) {
+                              _selectSession(session);
+                            } else {
+                              _openSessionRoom(session);
+                            }
+                          },
                         );
                       },
                     ),
@@ -1050,6 +1056,41 @@ class _HelpdeskTabPageState extends State<HelpdeskTabPage> {
     }
   }
 
+  Future<void> _openSessionRoom(HelpdeskSession session) async {
+    await _selectSession(session);
+    if (!mounted) return;
+
+    await Navigator.of(context).push(
+      PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 280),
+        reverseTransitionDuration: const Duration(milliseconds: 220),
+        pageBuilder: (_, animation, secondaryAnimation) =>
+            HelpdeskSessionRoomPage(session: session),
+        transitionsBuilder: (_, animation, secondaryAnimation, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutQuad,
+            reverseCurve: Curves.easeInQuad,
+          );
+
+          return FadeTransition(
+            opacity: curved,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0.12, 0),
+                end: Offset.zero,
+              ).animate(curved),
+              child: child,
+            ),
+          );
+        },
+      ),
+    );
+
+    if (!mounted) return;
+    await _loadSessions();
+  }
+
   @override
   Widget build(BuildContext context) {
     final isWide = _isWideLayout(context);
@@ -1123,6 +1164,546 @@ class _HelpdeskTabPageState extends State<HelpdeskTabPage> {
                 ),
         ),
       ],
+    );
+  }
+}
+
+class HelpdeskSessionRoomPage extends StatefulWidget {
+  final HelpdeskSession session;
+
+  const HelpdeskSessionRoomPage({super.key, required this.session});
+
+  @override
+  State<HelpdeskSessionRoomPage> createState() =>
+      _HelpdeskSessionRoomPageState();
+}
+
+class _HelpdeskSessionRoomPageState extends State<HelpdeskSessionRoomPage> {
+  final HelpdeskService _service = HelpdeskService();
+  final TextEditingController _composerController = TextEditingController();
+  List<HelpdeskMessage> _messages = <HelpdeskMessage>[];
+
+  bool _loadingMessages = false;
+  bool _isSending = false;
+  bool _isMutatingSession = false;
+  bool _isJoiningCall = false;
+  String? _error;
+  Timer? _pollTimer;
+
+  late HelpdeskSession _session;
+
+  @override
+  void initState() {
+    super.initState();
+    _session = widget.session;
+    _loadMessages();
+    _startPolling();
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    _composerController.dispose();
+    super.dispose();
+  }
+
+  Color _statusColor(BuildContext context, String status) {
+    final scheme = Theme.of(context).colorScheme;
+    switch (status) {
+      case HelpdeskSessionStatus.active:
+        return scheme.primary;
+      case HelpdeskSessionStatus.pending:
+        return scheme.tertiary;
+      case HelpdeskSessionStatus.ended:
+        return scheme.outline;
+      case HelpdeskSessionStatus.cancelled:
+        return scheme.error;
+      default:
+        return scheme.secondary;
+    }
+  }
+
+  String _statusLabel(String status) {
+    if (status.trim().isEmpty) return 'Unknown';
+    return status[0].toUpperCase() + status.substring(1);
+  }
+
+  String _kindLabel(String kind) {
+    switch (kind) {
+      case HelpdeskKinds.audioCall:
+        return 'Audio Call';
+      case HelpdeskKinds.videoCall:
+        return 'Video Call';
+      case HelpdeskKinds.audioConference:
+        return 'Audio Conference';
+      case HelpdeskKinds.videoConference:
+        return 'Video Conference';
+      default:
+        return kind.replaceAll('_', ' ').trim();
+    }
+  }
+
+  bool _supportsRealtimeCall(String kind) {
+    return kind == HelpdeskKinds.audioCall ||
+        kind == HelpdeskKinds.videoCall ||
+        kind == HelpdeskKinds.audioConference ||
+        kind == HelpdeskKinds.videoConference;
+  }
+
+  bool _isVideoKind(String kind) {
+    return kind == HelpdeskKinds.videoCall ||
+        kind == HelpdeskKinds.videoConference;
+  }
+
+  String _participantNames() {
+    final participants = _session.participants
+        .take(3)
+        .map((item) => item.fullName)
+        .where((name) => name.trim().isNotEmpty)
+        .join(', ');
+    return participants.isEmpty ? 'No participants' : participants;
+  }
+
+  Future<void> _loadMessages() async {
+    setState(() {
+      _loadingMessages = true;
+      _error = null;
+    });
+
+    try {
+      final messages = await _service.getMessages(_session.id);
+      messages.sort((a, b) {
+        final aTime = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bTime = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return aTime.compareTo(bTime);
+      });
+      if (!mounted) return;
+      setState(() => _messages = messages);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loadingMessages = false);
+    }
+  }
+
+  void _startPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      if (!mounted) return;
+      try {
+        final messages = await _service.getMessages(_session.id);
+        if (!mounted) return;
+        messages.sort((a, b) {
+          final aTime = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final bTime = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return aTime.compareTo(bTime);
+        });
+        setState(() => _messages = messages);
+      } catch (_) {
+        // Ignore background polling errors.
+      }
+    });
+  }
+
+  Future<void> _sendMessage() async {
+    final text = _composerController.text.trim();
+    if (text.isEmpty || _isSending) return;
+
+    setState(() {
+      _isSending = true;
+      _error = null;
+    });
+
+    try {
+      final message = await _service.postMessage(
+        sessionId: _session.id,
+        content: text,
+      );
+      if (!mounted) return;
+      setState(() {
+        _composerController.clear();
+        _messages = <HelpdeskMessage>[..._messages, message];
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
+  }
+
+  Future<void> _joinSelectedCall() async {
+    if (!_supportsRealtimeCall(_session.kind)) {
+      setState(
+        () => _error = 'This session type does not support audio/video call.',
+      );
+      return;
+    }
+
+    setState(() {
+      _isJoiningCall = true;
+      _error = null;
+    });
+
+    try {
+      if (_session.status == HelpdeskSessionStatus.pending) {
+        final updated = await _service.startSession(_session.id);
+        if (!mounted) return;
+        setState(() => _session = updated);
+      }
+
+      final token = await _service.getLivekitToken(_session.id);
+      if (!mounted) return;
+
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => HelpdeskCallPage(session: _session, token: token),
+        ),
+      );
+      if (!mounted) return;
+      await _loadMessages();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _isJoiningCall = false);
+    }
+  }
+
+  Future<void> _startSelectedSession() async {
+    setState(() {
+      _isMutatingSession = true;
+      _error = null;
+    });
+
+    try {
+      final updated = await _service.startSession(_session.id);
+      if (!mounted) return;
+      setState(() => _session = updated);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _isMutatingSession = false);
+    }
+  }
+
+  Future<void> _endSelectedSession() async {
+    setState(() {
+      _isMutatingSession = true;
+      _error = null;
+    });
+
+    try {
+      final updated = await _service.endSession(_session.id);
+      if (!mounted) return;
+      setState(() => _session = updated);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _isMutatingSession = false);
+    }
+  }
+
+  Future<void> _deleteSelectedSession() async {
+    final user = context.read<AuthController>().user;
+    final canDelete =
+        user != null &&
+        (user.role.toLowerCase() == 'admin' || user.id == _session.createdById);
+    if (!canDelete) {
+      setState(
+        () => _error =
+            'Only the session creator or admins can delete this session.',
+      );
+      return;
+    }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete session?'),
+        content: Text(
+          'Delete "${_session.displayTitle}"? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() {
+      _isMutatingSession = true;
+      _error = null;
+    });
+
+    try {
+      await _service.deleteSession(_session.id);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _isMutatingSession = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = context.watch<AuthController>().user;
+    final statusColor = _statusColor(context, _session.status);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_session.displayTitle),
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        foregroundColor: Theme.of(context).colorScheme.onSurface,
+        elevation: 0,
+        surfaceTintColor: Theme.of(context).colorScheme.surfaceTint,
+      ),
+      body: Column(
+        children: [
+          Material(
+            color: Theme.of(context).colorScheme.surface,
+            elevation: 1,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 240),
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                border: Border(
+                  bottom: BorderSide(
+                    color: Theme.of(
+                      context,
+                    ).dividerColor.withValues(alpha: 0.18),
+                  ),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _session.displayTitle,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.15,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Chip(
+                        label: Text(_kindLabel(_session.kind)),
+                        backgroundColor: Theme.of(
+                          context,
+                        ).colorScheme.primary.withValues(alpha: 0.12),
+                        labelStyle: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Chip(
+                        label: Text(_statusLabel(_session.status)),
+                        backgroundColor: statusColor.withValues(alpha: 0.14),
+                        labelStyle: TextStyle(
+                          color: statusColor,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Participants: ${_participantNames()}',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                IconButton(
+                  tooltip: 'Refresh',
+                  onPressed: _loadingMessages ? null : _loadMessages,
+                  icon: const Icon(Icons.refresh),
+                ),
+                if (_supportsRealtimeCall(_session.kind))
+                  FilledButton.icon(
+                    onPressed: _isJoiningCall ? null : _joinSelectedCall,
+                    icon: Icon(
+                      _isVideoKind(_session.kind)
+                          ? Icons.videocam_outlined
+                          : Icons.call_outlined,
+                    ),
+                    label: Text(_isJoiningCall ? 'Joining...' : 'Join'),
+                  ),
+                if (_session.status == HelpdeskSessionStatus.pending)
+                  FilledButton.tonal(
+                    onPressed: _isMutatingSession
+                        ? null
+                        : _startSelectedSession,
+                    child: const Text('Start'),
+                  ),
+                if (_session.status == HelpdeskSessionStatus.active)
+                  FilledButton.tonal(
+                    onPressed: _isMutatingSession ? null : _endSelectedSession,
+                    child: const Text('End'),
+                  ),
+                IconButton(
+                  tooltip: 'Delete session',
+                  onPressed: _isMutatingSession ? null : _deleteSelectedSession,
+                  icon: const Icon(Icons.delete_outline),
+                ),
+              ],
+            ),
+          ),
+          if (_error != null)
+            MaterialBanner(
+              content: Text(_error!),
+              actions: [
+                TextButton(
+                  onPressed: () => setState(() => _error = null),
+                  child: const Text('Dismiss'),
+                ),
+              ],
+            ),
+          Expanded(
+            child: _loadingMessages
+                ? const Center(child: CircularProgressIndicator())
+                : _messages
+                      .where((item) => item.messageType != 'signal')
+                      .isEmpty
+                ? const Center(child: Text('No messages yet.'))
+                : ListView.builder(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: _messages.length,
+                    itemBuilder: (context, index) {
+                      final message = _messages[index];
+                      if (message.messageType == 'signal') {
+                        return const SizedBox.shrink();
+                      }
+                      final own = user != null && message.senderId == user.id;
+                      return Align(
+                        alignment: own
+                            ? Alignment.centerRight
+                            : Alignment.centerLeft,
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          constraints: const BoxConstraints(maxWidth: 420),
+                          decoration: BoxDecoration(
+                            color: own
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(
+                                    context,
+                                  ).colorScheme.surfaceContainerHigh,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (!own)
+                                Text(
+                                  message.senderName.isEmpty
+                                      ? 'Unknown sender'
+                                      : message.senderName,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                  ),
+                                ),
+                              Text(
+                                message.content,
+                                style: TextStyle(
+                                  color: own
+                                      ? Theme.of(context).colorScheme.onPrimary
+                                      : Theme.of(context).colorScheme.onSurface,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                message.createdAt == null
+                                    ? ''
+                                    : TimeOfDay.fromDateTime(
+                                        message.createdAt!.toLocal(),
+                                      ).format(context),
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: own
+                                      ? Theme.of(context).colorScheme.onPrimary
+                                            .withValues(alpha: 0.8)
+                                      : Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          SafeArea(
+            top: false,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(color: Theme.of(context).dividerColor),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _composerController,
+                      minLines: 1,
+                      maxLines: 4,
+                      decoration: const InputDecoration(
+                        hintText: 'Type your message...',
+                      ),
+                      onSubmitted: (_) => _isSending ? null : _sendMessage(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: _isSending ? null : _sendMessage,
+                    child: Text(_isSending ? 'Sending...' : 'Send'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
